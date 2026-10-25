@@ -21,10 +21,13 @@ from .utils import log
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _LIST_RE = re.compile(r'^\((?P<flags>[^)]*)\)\s+(?P<delim>"(?:[^"\\]|\\.)*"|NIL)\s+(?P<name>.+)$')
-_GUESSES = {
-    "drafts": ["[Gmail]/Drafts", "Drafts", "INBOX.Drafts", "Draft", "INBOX/Drafts"],
-    "sent": ["[Gmail]/Sent Mail", "Sent", "Sent Items", "Sent Messages", "INBOX.Sent", "INBOX/Sent"],
+# Folder names to fall back on when the server doesn't flag its special folders
+# (compared on the last part of the name, so "INBOX.Sent" and "INBOX/Sent Items" match too).
+_FOLDER_NAMES = {
+    "drafts": ["drafts", "draft"],
+    "sent": ["sent", "sent items", "sent messages", "sent mail", "sent-mail", "outbox sent"],
 }
+SECURITY_MODES = ("ssl", "starttls", "none")
 _AUTO_SUBJECT = re.compile(
     r"^(automatic reply|auto[- ]?reply|auto:|out of (the )?office|ooo\b|autoreply|away from (the )?office"
     r"|i am (currently )?out of|on leave)", re.I)
@@ -138,9 +141,13 @@ def build_message(*, from_name: str, from_addr: str, to_addr: str, to_name: str,
 class Mailbox:
     def __init__(self, host: str, port: int, username: str, password: str, *, drafts_folder: str = "",
                  sent_folder: str = "", reply_folders: list[str] | None = None, max_fetch_bytes: int = 5_000_000,
-                 use_ssl: bool = True):
+                 security: str = "ssl", own_addresses: list[str] | None = None):
+        if security not in SECURITY_MODES:
+            raise ValueError(f"email.security must be one of {', '.join(SECURITY_MODES)}")
         self.host, self.port, self.username, self.password = host, port, username, password
-        self.use_ssl = use_ssl
+        self.security = security
+        # Messages from these addresses are ours, never "replies".
+        self.own_addresses = {a.strip().lower() for a in [username, *(own_addresses or [])] if a and "@" in a}
         self.drafts = drafts_folder
         self.sent = sent_folder
         self.reply_folders = list(reply_folders or [])
@@ -153,13 +160,16 @@ class Mailbox:
     def from_config(cls, cfg) -> "Mailbox":
         e = cfg["email"]
         password = cfg.secret(e["password_env"])
-        if not e["username"] or not password:
-            raise RuntimeError(
-                f"Email not configured: set email.username in config.yaml and {e['password_env']} in .env")
+        missing = [name for name, value in (("email.imap_host", e["imap_host"]), ("email.username", e["username"]))
+                   if not value or "<<" in str(value)]
+        if missing or not password:
+            raise RuntimeError("Email not configured: set " + ", ".join(missing + (
+                [] if password else [f"{e['password_env']} in .env"])))
         return cls(e["imap_host"], int(e["imap_port"]), e["username"], password,
                    drafts_folder=e["drafts_folder"], sent_folder=e["sent_folder"],
                    reply_folders=e["reply_folders"], max_fetch_bytes=int(e["max_fetch_bytes"]),
-                   use_ssl=e.get("use_ssl", True))
+                   security=str(e.get("security", "ssl")).lower(),
+                   own_addresses=[cfg["sender"].get("email", ""), cfg["sender"].get("unsubscribe_email", "")])
 
     # connection --------------------------------------------------------
     def __enter__(self) -> "Mailbox":
@@ -170,10 +180,13 @@ class Mailbox:
         self.close()
 
     def connect(self) -> None:
-        if self.use_ssl:
-            self.imap = imaplib.IMAP4_SSL(self.host, self.port, ssl_context=ssl.create_default_context())
+        context = ssl.create_default_context()
+        if self.security == "ssl":
+            self.imap = imaplib.IMAP4_SSL(self.host, self.port, ssl_context=context, timeout=60)
         else:
-            self.imap = imaplib.IMAP4(self.host, self.port)
+            self.imap = imaplib.IMAP4(self.host, self.port, timeout=60)
+            if self.security == "starttls":
+                self.imap.starttls(ssl_context=context)
         self.imap.login(self.username, self.password)
         self._discover_folders()
 
@@ -191,6 +204,8 @@ class Mailbox:
         for line in data or []:
             if not line:
                 continue
+            if isinstance(line, tuple):  # name sent as a literal: (b'(\\Flags) "." {12}', b'INBOX.Drafts')
+                line = re.sub(rb"\{\d+\}$", b"", line[0]).strip() + b' "' + line[1] + b'"'
             m = _LIST_RE.match(line.decode("utf-8", "replace") if isinstance(line, bytes) else str(line))
             if not m:
                 continue
@@ -203,9 +218,10 @@ class Mailbox:
             for name, flags in self.folders.items():
                 if flag in flags:
                     return name
-            for guess in _GUESSES.get(kind, []):
-                if guess in self.folders:
-                    return guess
+            for wanted in _FOLDER_NAMES.get(kind, []):
+                for name in self.folders:
+                    if re.split(r"[./]", name)[-1].strip().lower() == wanted:
+                        return name
             return ""
 
         self.drafts = self.drafts or special("\\drafts", "drafts")
@@ -278,7 +294,7 @@ class Mailbox:
             if domain:
                 uids |= set(self._search(folder, ["SINCE", imap_date(since), "FROM", quote(domain)]))
             for info in self._fetch(folder, sorted(uids, key=int)[-20:]):
-                if info.from_addr == self.username.lower():
+                if info.from_addr in self.own_addresses:
                     continue
                 same_domain = domain and info.from_addr.endswith(("@" + domain, "." + domain))
                 if info.from_addr != address.lower() and not same_domain:

@@ -69,8 +69,12 @@ def cmd_check(cfg, args) -> int:
     ok &= bool(cfg.secret(key_env))
     try:
         with Mailbox.from_config(cfg) as mb:
-            print(f"[OK] IMAP login {cfg['email']['username']}: drafts='{mb.drafts}' sent='{mb.sent}' "
-                  f"replies={mb.reply_folders}")
+            print(f"[OK] IMAP login {cfg['email']['username']} on {cfg['email']['imap_host']}: "
+                  f"drafts='{mb.drafts}' sent='{mb.sent}' replies={mb.reply_folders}")
+            print(f"     folders on the server: {', '.join(sorted(mb.folders))}")
+            if not mb.sent:
+                print("[!] No Sent folder found - set email.sent_folder to one of the folders above, "
+                      "otherwise follow-ups can't see what you've sent")
     except Exception as exc:  # noqa: BLE001 - report any connection/auth problem
         print(f"[X] IMAP: {exc}")
         ok = False

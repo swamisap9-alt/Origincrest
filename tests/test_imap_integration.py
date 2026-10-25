@@ -42,7 +42,7 @@ def _put(folder, *, from_addr, to_addr, subject, body, when, headers=None, messa
 
 def _mailbox():
     host, port, user, password = _parts()
-    return Mailbox(host, port, user, password, use_ssl=False)
+    return Mailbox(host, port, user, password, security="none")
 
 
 def test_folders_drafts_and_searches():

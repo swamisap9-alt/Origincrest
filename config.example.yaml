@@ -49,13 +49,18 @@ followup:                       # Workflow 3 (weekdays)
   max_drafts_per_run: 15
   max_followups_per_contact: 3
 
+# Your mail server's IMAP settings - the same ones your phone or Outlook uses for this mailbox
+# (your email host's "manual setup" page lists them). The password goes in .env.
 email:
-  imap_host: imap.gmail.com
+  imap_host: '<<EDIT ME: e.g. mail.origincrest.com.au>>'
   imap_port: 993
-  username: 'you@gmail.com'      # your full email address
-  # Folders are detected automatically; set them only if detection fails.
+  security: ssl                # ssl for port 993; starttls for port 143
+  username: '<<EDIT ME: mailbox login, usually the full email address>>'
+  # Folders are found automatically (Drafts / Sent, INBOX.Drafts / INBOX.Sent, Sent Items...).
+  # `check` lists the server's folders; set these only if it picks the wrong ones.
   drafts_folder: ''
   sent_folder: ''
+  reply_folders: []            # default: INBOX. Add folders your mail rules move replies into.
 
 # Used in every email signature and the unsubscribe footer (Spam Act 2003).
 # The agent won't create drafts until the <<EDIT ME>> values are replaced.

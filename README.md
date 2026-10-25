@@ -87,12 +87,12 @@ styled like your existing headers, and Excel tables and filters are stretched to
    ```
 4. **Anthropic API key**: create one at <https://platform.claude.com/settings/keys> and put it in `.env`
    as `ANTHROPIC_API_KEY=...`.
-5. **Email (IMAP)**: for Gmail, turn on 2-Step Verification, then create an *App password*
-   (Google Account → Security → App passwords) and put it in `.env` as `IMAP_PASSWORD=...`.
-   IMAP is enabled by default on Gmail. For Outlook/Microsoft 365, set `email.imap_host` to
-   `outlook.office365.com` (your tenant must allow IMAP with an app password).
+5. **Email (IMAP)**: put the mailbox password in `.env` as `IMAP_PASSWORD=...`. Use an app password if
+   your mail host provides them.
 6. **Edit `config.yaml`**:
-   - `email.username`: your email address.
+   - `email`: your mail server's IMAP settings, the same ones your phone or Outlook uses for this mailbox:
+     `imap_host` (e.g. `mail.yourdomain.com.au`), `imap_port` + `security` (`993` + `ssl`, or `143` +
+     `starttls`), and `username` (usually the full email address).
    - `sender`: name, business address (or phone), sending email, ABN if you want it shown. These go in the
      signature and the Spam Act footer. `sender.email` should be the mailbox above or an alias of it.
    - `offer`: what the emails may say about OriginCrest (summary, your Sumatra/Sulawesi/Java/Flores lots,
@@ -102,7 +102,9 @@ styled like your existing headers, and Excel tables and filters are stretched to
    ```powershell
    scripts\run.cmd check --api
    ```
-   This lists every tab, the header row it found and how each column was matched. Fix anything marked `[X]`.
+   This lists every tab, the header row it found and how each column was matched. It also logs in to your
+   mailbox and shows which folders it will use for Drafts, Sent and replies, plus every folder on the server.
+   Fix anything marked `[X]` or `[!]`.
 8. **First run by hand**, with Excel closed:
    ```powershell
    scripts\run.cmd init-sheets          # creates the 4 discovery tabs in both workbooks
@@ -128,6 +130,16 @@ styled like your existing headers, and Excel tables and filters are stretched to
    listing drafts, replies, flagged rows, anything skipped, and the Claude tokens / web searches used.
 
 ## Good to know
+
+- **Email setup.** The agent works with any standard IMAP server. Drafts appear in every app connected to the
+  mailbox by IMAP (Outlook, Thunderbird, phone, webmail). Two things matter for follow-ups:
+  - your mail apps must use **IMAP, not POP3**, or replies get downloaded off the server before the agent
+    sees them;
+  - sent mail must be saved to the server's Sent folder (IMAP apps do this by default).
+
+  If replies are filed by mail rules, list those folders in `email.reply_folders`. A certificate error usually
+  means the host name doesn't match the server's certificate: on shared hosting, use the server name your
+  host gives for mail apps (e.g. `server123.hostname.com.au`).
 
 - **Excel open?** The agent never writes to a workbook that's open. It waits up to 5 minutes, then keeps
   the changes (new rows are queued; research and drafts are remembered) and writes them on the next run.

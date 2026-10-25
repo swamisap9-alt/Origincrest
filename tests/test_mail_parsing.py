@@ -42,3 +42,42 @@ def test_build_message_threading():
     assert msg["References"] == "<0@x> <1@x>"
     assert msg["Message-ID"].endswith("@origincrest.com.au>")
     assert msg["List-Unsubscribe"].startswith("<mailto:")
+
+
+class _FakeImap:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def list(self):
+        return "OK", self.lines
+
+
+def _discover(lines, **kw):
+    from origincrest_agent.mailer import Mailbox
+
+    mb = Mailbox("mail.example.com.au", 993, "swami@origincrest.com.au", "pw", **kw)
+    mb.imap = _FakeImap(lines)
+    mb._discover_folders()
+    return mb
+
+
+def test_folders_found_by_name_when_server_has_no_special_use_flags():
+    # Typical cPanel/Courier layout: "." separator, everything under INBOX, no \\Drafts / \\Sent flags.
+    mb = _discover([b'(\\HasChildren) "." INBOX', b'(\\HasNoChildren) "." INBOX.Drafts',
+                    b'(\\HasNoChildren) "." "INBOX.Sent Items"', b'(\\HasNoChildren) "." INBOX.Trash'])
+    assert (mb.drafts, mb.sent, mb.reply_folders) == ("INBOX.Drafts", "INBOX.Sent Items", ["INBOX"])
+
+
+def test_folder_name_sent_as_literal():
+    mb = _discover([b'(\\HasNoChildren \\Drafts) "/" Drafts', (b'(\\HasNoChildren \\Sent) "/" {13}', b'Sent Messages')])
+    assert (mb.drafts, mb.sent) == ("Drafts", "Sent Messages")
+
+
+def test_own_addresses_and_security_option():
+    import pytest
+    from origincrest_agent.mailer import Mailbox
+
+    mb = Mailbox("h", 993, "swami", "pw", own_addresses=["Hello@OriginCrest.com.au"])
+    assert mb.own_addresses == {"hello@origincrest.com.au"}  # a non-email login name isn't added
+    with pytest.raises(ValueError):
+        Mailbox("h", 993, "u", "pw", security="tls1")

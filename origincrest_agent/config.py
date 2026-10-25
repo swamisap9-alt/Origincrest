@@ -125,8 +125,10 @@ DEFAULTS: dict[str, Any] = {
         "sent_lookback_days": 180,
     },
     "email": {
-        "imap_host": "imap.gmail.com",
+        "imap_host": "",
         "imap_port": 993,
+        # ssl = implicit TLS (usually port 993), starttls = upgrade on port 143, none = local testing only.
+        "security": "ssl",
         "username": "",
         "password_env": "IMAP_PASSWORD",
         # Leave blank to auto-detect from the server's special-use folder flags.
