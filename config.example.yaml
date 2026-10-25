@@ -1,0 +1,82 @@
+# OriginCrest agent settings. Copy to config.yaml and edit.
+# Anything you leave out uses the built-in default (see origincrest_agent/config.py).
+# Windows paths: keep them in single quotes so the backslashes stay as they are.
+
+timezone: Australia/Adelaide
+
+# State database, logs, workbook backups, run reports and draft previews.
+# Kept on the local disk (not OneDrive) on purpose.
+data_dir: '%LOCALAPPDATA%\OriginCrestAgent'
+
+workbooks:
+  rfq:
+    path: 'C:\Users\swami\OneDrive\Documents\Origincrest\Origincrest 3PL and Freight forwarder contacts RFQ\OriginCrest_Freight_3PL_Contacts_RFQ.xlsx'
+    default_kind: freight      # existing tabs here hold RFQ / freight rows (5-day follow-ups)
+  master:
+    path: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest enquiries\Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx'
+    default_kind: freight
+
+# Tabs the agent creates (if missing) in both workbooks for new discoveries.
+tabs:
+  roasters_australia: Roasters - Australia
+  roasters_adelaide: Roasters - Adelaide
+  freight_australia: Freight-3PL - Australia
+  freight_adelaide: Freight-3PL - Adelaide
+  extra_roaster_tabs: []       # other existing tabs that list buyers/roasters, e.g. ["Buyers"]
+  ignore_tabs: []              # tabs the agent must never touch, e.g. ["Pricing"]
+
+claude:
+  model: claude-opus-5-5
+
+discovery:                      # Workflow 1 (weekly)
+  workbooks: [rfq, master]
+  max_new_rows_per_run: 30
+  max_new_rows_per_segment: 10
+  run_leads_after: true         # go straight on to workflow 2 for the new rows
+
+leads:                          # Workflow 2
+  workbooks: [rfq, master]
+  max_research_per_run: 10
+  max_drafts_per_run: 8
+  min_fit_score_for_draft: 55
+  draft_for_unreviewed: true    # false = only draft after you change "New - to review" to "Reviewed"/"Approved"
+
+followup:                       # Workflow 3 (weekdays)
+  workbooks: [rfq]
+  open_statuses: [Open]
+  quote_days: 5
+  lead_days: 10
+  max_drafts_per_run: 15
+  max_followups_per_contact: 3
+
+email:
+  imap_host: imap.gmail.com
+  imap_port: 993
+  username: 'you@gmail.com'      # your full email address
+  # Folders are detected automatically; set them only if detection fails.
+  drafts_folder: ''
+  sent_folder: ''
+
+# Used in every email signature and the unsubscribe footer (Spam Act 2003).
+# The agent won't create drafts until the <<EDIT ME>> values are replaced.
+sender:
+  name: '<<EDIT ME: your name>>'
+  title: ''
+  business_name: OriginCrest
+  abn: ''
+  address: '<<EDIT ME: business postal address>>'
+  phone: ''
+  email: '<<EDIT ME: the address you send from>>'
+  website: ''
+  unsubscribe_email: ''        # defaults to sender.email
+
+# What the emails may say about OriginCrest. The agent states nothing beyond this.
+offer:
+  summary: '<<EDIT ME: e.g. OriginCrest imports traceable, single-origin Indonesian green coffee for Australian specialty roasters.>>'
+  origins:
+    - 'Sumatra - <<EDIT ME: e.g. Gayo, wet-hulled, notes>>'
+    - 'Sulawesi - <<EDIT ME>>'
+    - 'Java - <<EDIT ME>>'
+    - 'Flores - <<EDIT ME>>'
+  facts: []                    # e.g. ["Green samples (200 g) posted free within Australia", "Stock held in Adelaide"]
+  call_to_action: Offer to send green samples and a current offer sheet.

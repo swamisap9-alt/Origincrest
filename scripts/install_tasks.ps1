@@ -1,0 +1,45 @@
+# Registers the three workflows in Windows Task Scheduler (folder "OriginCrest").
+#   powershell -ExecutionPolicy Bypass -File scripts\install_tasks.ps1
+# Re-run any time to change times; -Force replaces the existing tasks.
+param(
+    [string]$DiscoverDay = "Monday",
+    [string]$DiscoverTime = "06:30",
+    [string]$LeadsStart = "07:00",
+    [int]$LeadsEveryHours = 2,
+    [string]$FollowupTime = "07:30"
+)
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$pythonw = Join-Path $root ".venv\Scripts\pythonw.exe"
+if (-not (Test-Path $pythonw)) { throw "Run scripts\setup.ps1 first." }
+
+# Runs as you, only while you're logged on (OneDrive must be running), and catches up
+# on runs missed while the PC was off or asleep.
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew
+
+function Add-AgentTask($name, $arguments, $trigger, $description) {
+    $action = New-ScheduledTaskAction -Execute $pythonw -Argument "-m origincrest_agent $arguments" `
+        -WorkingDirectory $root
+    Register-ScheduledTask -TaskPath "\OriginCrest\" -TaskName $name -Action $action -Trigger $trigger `
+        -Settings $settings -Description $description -Force | Out-Null
+    Write-Host "Scheduled: OriginCrest\$name"
+}
+
+$weekly = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DiscoverDay -At $DiscoverTime
+Add-AgentTask "1 Discover" "discover" $weekly `
+    "Weekly: find new roasters and forwarders/3PLs, add them as 'New - to review', then research them."
+
+$leads = New-ScheduledTaskTrigger -Daily -At $LeadsStart
+$leads.Repetition = (New-ScheduledTaskTrigger -Once -At $LeadsStart `
+    -RepetitionInterval (New-TimeSpan -Hours $LeadsEveryHours) -RepetitionDuration (New-TimeSpan -Hours 12)).Repetition
+Add-AgentTask "2 Leads" "leads" $leads `
+    "Every $LeadsEveryHours h from $($LeadsStart): research new roaster rows, score fit, save intro drafts."
+
+$weekdays = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $FollowupTime
+Add-AgentTask "3 Follow-up" "followup" $weekdays `
+    "Weekdays: check replies, save follow-up drafts, update Last contacted / Next action date."
+
+Write-Host ""
+Write-Host "Done. See them in Task Scheduler > Task Scheduler Library > OriginCrest."
+Write-Host "Remove them with: powershell -ExecutionPolicy Bypass -File scripts\uninstall_tasks.ps1"
