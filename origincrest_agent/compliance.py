@@ -55,7 +55,7 @@ class Sender:
     name: str
     email: str
     signature: str
-    signature_source: str  # "your Sent folder", "config.yaml" or "none"
+    signature_source: str  # e.g. "your sent emails in 'Sent Items' (newest 26/10/2026)", "config.yaml" or "none"
     business_name: str
     unsubscribe_email: str
     problems: list[str] = field(default_factory=list)
@@ -95,7 +95,9 @@ def resolve_sender(cfg, mailbox=None) -> Sender:
         problems.append(f"email.signature must be one of {', '.join(SIGNATURE_MODES)}")
     signature, source = "", "none"
     if mode == "auto" and learned and learned.signature:
-        signature, source = learned.signature, "your Sent folder"
+        newest = f", newest {learned.newest.astimezone():%d/%m/%Y}" if learned.newest else ""
+        folders = ", ".join(f"'{f}'" for f in learned.folders)
+        signature, source = learned.signature, f"your recent sent emails in {folders}{newest}"
     elif mode in ("auto", "config") and not config_sender_problems(cfg):
         signature, source = config_signature(cfg), "config.yaml"
     elif mode == "config":

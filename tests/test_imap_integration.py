@@ -131,3 +131,27 @@ def test_agent_drafts_listed_and_duplicate_drafts_folders_found():
         assert f"RFQ {tag}" in [d.subject for d in mb.agent_drafts()]
         assert mb.agent_drafts("Old/Drafts") == []
         assert mb.message_count("Drafts") >= 1
+
+
+def test_signature_comes_from_newest_mail_across_sent_folders():
+    """Servers often have both "Sent" and Outlook's "Sent Items"; the newest emails win wherever they are."""
+    host, port, user, password = _parts()
+    imap = imaplib.IMAP4(host, port)
+    imap.login(user, password)
+    imap.create(quote("Sent Items"))
+    imap.logout()
+    tag = uuid.uuid4().hex[:6]
+    old_sig = f"Swami K\nOld number 0400 000 000 {tag}"
+    new_sig = f"Swaminathan Kailasam\nDirector, OriginCrest\nM 0400 999 888 {tag}"
+    now = datetime.now(timezone.utc)
+    for i in range(2):
+        _put("Sent Mail", from_addr="Swami K <swami@example.com>", to_addr=f"old{i}-{tag}@example.com",
+             subject="Old", body=f"Hi,\n\nOld {i}.\n\nRegards,\n{old_sig}", when=now - timedelta(days=30, seconds=i))
+        _put("Sent Items", from_addr="Swami K <swami@example.com>", to_addr=f"new{i}-{tag}@example.com",
+             subject="New", body=f"Hi,\n\nNew {i}.\n\nKind regards,\n{new_sig}", when=now + timedelta(minutes=5, seconds=i))
+    with _mailbox() as mb:
+        assert mb.sent_folders == ["Sent Mail", "Sent Items"]
+        learned = mb.learn_sender()
+        assert learned.signature == new_sig
+        assert "Sent Items" in learned.folders
+        assert [m.subject for m in mb.messages_to(f"new0-{tag}@example.com", TODAY - timedelta(days=5))] == ["New"]

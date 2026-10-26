@@ -140,6 +140,8 @@ class LearnedSender:
     email: str
     signature: str
     messages_checked: int
+    folders: tuple[str, ...] = ()
+    newest: datetime | None = None
 
 
 def _norm_line(line: str) -> str:
@@ -205,8 +207,10 @@ def learn_sender(messages: list["MailInfo"]) -> LearnedSender | None:
         return None
     address = Counter(m.from_addr for m in mine).most_common(1)[0][0]
     names = Counter(m.from_name for m in mine if m.from_addr == address and m.from_name)
-    own = [m.text for m in mine if m.from_addr == address and m.text]
-    return LearnedSender(names.most_common(1)[0][0] if names else "", address, learn_signature(own), len(own))
+    own = [m for m in mine if m.from_addr == address and m.text]
+    return LearnedSender(names.most_common(1)[0][0] if names else "", address,
+                         learn_signature([m.text for m in own]), len(own),
+                         tuple(dict.fromkeys(m.folder for m in own)), own[0].when if own else None)
 
 
 def build_message(*, from_name: str, from_addr: str, to_addr: str, to_name: str, subject: str, body: str,
@@ -242,6 +246,7 @@ class Mailbox:
         self.own_addresses = {a.strip().lower() for a in [username, *(own_addresses or [])] if a and "@" in a}
         self.drafts = drafts_folder
         self.sent = sent_folder
+        self.sent_folders: list[str] = [sent_folder] if sent_folder else []
         self.reply_folders = list(reply_folders or [])
         self.max_fetch_bytes = max_fetch_bytes
         self.imap: imaplib.IMAP4 | None = None
@@ -311,7 +316,10 @@ class Mailbox:
             return candidates[0] if candidates else ""
 
         self.drafts = self.drafts or special("drafts")
-        self.sent = self.sent or special("sent")
+        if not self.sent_folders:
+            # Servers often have both "Sent" and "Sent Items" (Outlook's); read them all.
+            self.sent_folders = self.folder_candidates("sent")
+        self.sent = self.sent or (self.sent_folders[0] if self.sent_folders else "")
         if not self.reply_folders:
             all_mail = special("all")
             self.reply_folders = [all_mail] if all_mail else ["INBOX"]
@@ -411,17 +419,23 @@ class Mailbox:
         return sorted(found.values(), key=_sort_key, reverse=True)
 
     def messages_to(self, address: str, since: date) -> list[MailInfo]:
-        """Messages in the Sent folder addressed to `address` since a date, newest first."""
-        if not self.sent:
-            return []
-        uids = self._search(self.sent, ["SINCE", imap_date(since), "TO", quote(address)])
-        return sorted(self._fetch(self.sent, uids[-10:]), key=_sort_key, reverse=True)
+        """Messages in your Sent folder(s) addressed to `address` since a date, newest first."""
+        found: list[MailInfo] = []
+        for folder in self.sent_folders:
+            uids = self._search(folder, ["SINCE", imap_date(since), "TO", quote(address)])
+            found += self._fetch(folder, uids[-10:])
+        return sorted(found, key=_sort_key, reverse=True)
 
     def recent_sent(self, limit: int = 25) -> list[MailInfo]:
-        if not self.sent:
-            return []
-        uids = self._search(self.sent, ["ALL"])
-        return sorted(self._fetch(self.sent, uids[-limit:]), key=lambda m: (_sort_key(m), int(m.uid)), reverse=True)
+        """Your most recent sent emails across every Sent folder, newest first."""
+        found: list[MailInfo] = []
+        cap, self.max_fetch_bytes = self.max_fetch_bytes, min(self.max_fetch_bytes, 2_000_000)
+        try:
+            for folder in self.sent_folders:
+                found += self._fetch(folder, self._search(folder, ["ALL"])[-limit:])
+        finally:
+            self.max_fetch_bytes = cap
+        return sorted(found, key=lambda m: (_sort_key(m), int(m.uid)), reverse=True)[:limit]
 
     def learn_sender(self) -> LearnedSender | None:
         return learn_sender(self.recent_sent())

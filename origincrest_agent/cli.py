@@ -79,7 +79,7 @@ def cmd_check(cfg, args) -> int:
     try:
         with Mailbox.from_config(cfg) as mb:
             print(f"[OK] IMAP login {cfg['email']['username']} on {cfg['email']['imap_host']}: "
-                  f"drafts='{mb.drafts}' sent='{mb.sent}' replies={mb.reply_folders}")
+                  f"drafts='{mb.drafts}' sent={mb.sent_folders} replies={mb.reply_folders}")
             print(f"     folders on the server: {', '.join(sorted(mb.folders))}")
             if not mb.sent:
                 print("[!] No Sent folder found - set email.sent_folder to one of the folders above, "
@@ -118,7 +118,7 @@ def _print_sender(cfg, mailbox) -> bool:
         for line in sender.signature.splitlines():
             print(f"        | {line}")
     else:
-        print("[!] No signature found in your Sent folder - drafts will have none (add it when you send, "
+        print("[!] No signature found in your recent sent emails - drafts will have none (add it when you send, "
               "or set email.signature: config)")
     return True
 

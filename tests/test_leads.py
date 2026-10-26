@@ -164,7 +164,7 @@ def test_your_own_signature_is_used(cfg, agent, mailbox, make_ctx):
     body = msg.get_content()
     assert "Kind regards,\n\nSwami Kailasam\nDirector | OriginCrest\nM 0400 111 222" in body
     assert "unsubscribe" in body  # the opt-out footer is still added
-    assert "your Sent folder" in " ".join(ctx.report.sections["Signature"])
+    assert "your recent sent emails in 'Sent'" in " ".join(ctx.report.sections["Signature"])
 
 
 def test_already_emailed_contact_goes_to_open(cfg, agent, mailbox, make_ctx):
