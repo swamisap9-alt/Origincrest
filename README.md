@@ -30,11 +30,12 @@ The spreadsheets stay where they are, so your existing OneDrive → Google Drive
   The agent then loads the source page (and the company's contact page) and **keeps an email, phone or
   contact name only if it actually appears there**. If the page says "no unsolicited email", the email
   is left blank. Anything dropped is explained in `Agent notes`.
-- **Spam Act 2003.** Every email gets your signature (name, business, address/phone) plus an opt-out, added
-  by code rather than by the model: intro emails get the full unsubscribe footer, RFQs a one-line "reply
-  'unsubscribe' and we won't contact you again". Both carry a `List-Unsubscribe` header. Unsubscribe replies are detected on the next weekday run, the row is set to
+- **Spam Act 2003.** Every email carries your own signature, copied from your recent sent emails, so
+  recipients see who you are and how to reach you. It also gets an opt-out, added by code rather than by the
+  model: intro emails get the full unsubscribe footer, RFQs a one-line "reply 'unsubscribe' and we won't
+  contact you again". Both carry a `List-Unsubscribe` header. Unsubscribe replies are detected on the next weekday run, the row is set to
   `Unsubscribed - do not contact`, and the address goes on a suppression list that every workflow checks.
-  The agent won't draft anything until your sender details in `config.yaml` are filled in.
+  If no From address can be found, the agent won't draft anything until one is set in `config.yaml`.
 - **Caps per run:** 20 new rows per workbook (6 per category and region), 4 categories per week (rotating),
   10 companies researched, 8 drafts, 15 follow-up drafts, max 3 follow-ups per contact. All adjustable.
 - **Your data is safe:** a timestamped backup of each workbook is made before every save, nothing is written
@@ -107,8 +108,10 @@ styled like your existing headers, and Excel tables and filters are stretched to
    - `email`: your mail server's IMAP settings, the same ones your phone or Outlook uses for this mailbox:
      `imap_host` (e.g. `mail.yourdomain.com.au`), `imap_port` + `security` (`993` + `ssl`, or `143` +
      `starttls`), and `username` (usually the full email address).
-   - `sender`: name, business address (or phone), sending email, ABN if you want it shown. These go in the
-     signature and the Spam Act footer. `sender.email` should be the mailbox above or an alias of it.
+   - Signature: nothing to do. The agent copies the signature you already use from your recent sent emails,
+     with your name and From address, and `check` shows what it found. Text signatures are copied exactly;
+     a logo image in an HTML signature isn't, because drafts are plain text. If you'd rather paste your
+     own each time, set `email.signature: none`.
    - `rfq.requirements` (optional): what you need quoted, e.g. lanes, container size, volumes, services. Leave
      it blank and the agent works it out from your RFQ tracker and last RFQ email.
    - `offer` (optional): extra facts about OriginCrest the emails may use, such as sample sizes or where stock

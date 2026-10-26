@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import email
 import email.policy
+import html
 import imaplib
 import re
 import ssl
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 from email.message import EmailMessage
@@ -59,7 +61,8 @@ class MailInfo:
     message_id: str
     references: str
     auto_reply: bool
-    text: str  # first part of the body, quoted history removed
+    text: str  # the message's own text, quoted history removed
+    from_name: str = ""
 
     @property
     def is_unsubscribe(self) -> bool:
@@ -89,7 +92,10 @@ def _body_text(msg) -> str:
             return ""
         content = part.get_content()
         if part.get_content_type() == "text/html":
-            content = re.sub(r"<(script|style)[^>]*>.*?</\1>|<[^>]+>", " ", content, flags=re.S | re.I)
+            content = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", content, flags=re.S | re.I)
+            content = re.sub(r"<br\s*/?>|</(p|div|tr|li|h\d)>", "\n", content, flags=re.I)
+            content = html.unescape(re.sub(r"<[^>]+>", "", content))
+            content = "\n".join(re.sub(r"[ \t\xa0]+", " ", line).strip() for line in content.splitlines())
         return content
     except (KeyError, LookupError, UnicodeDecodeError, AttributeError):
         return ""
@@ -101,7 +107,8 @@ def parse_message(raw: bytes, folder: str, uid: str, include_body: bool = True) 
         when = parsedate_to_datetime(str(msg["Date"])) if msg["Date"] else None
     except (TypeError, ValueError):
         when = None
-    from_addr = (getaddresses([str(msg.get("From", ""))]) or [("", "")])[0][1].lower()
+    from_name, from_addr = (getaddresses([str(msg.get("From", ""))]) or [("", "")])[0]
+    from_addr = from_addr.lower()
     to_addrs = [a.lower() for _, a in getaddresses([str(msg.get("To", "")), str(msg.get("Cc", ""))]) if a]
     subject = str(msg.get("Subject", "")).strip()
     auto_submitted = str(msg.get("Auto-Submitted", "no")).lower()
@@ -112,9 +119,95 @@ def parse_message(raw: bytes, folder: str, uid: str, include_body: bool = True) 
         or precedence in ("auto_reply", "bulk", "junk")
         or bool(_AUTO_SUBJECT.search(subject))
     )
-    text = strip_quoted(_body_text(msg))[:3000] if include_body else ""
+    text = strip_quoted(_body_text(msg))[:8000] if include_body else ""
     return MailInfo(folder, uid, when, from_addr, to_addrs, subject, str(msg.get("Message-ID", "")).strip(),
-                    str(msg.get("References", "")), auto, text)
+                    str(msg.get("References", "")), auto, text, from_name.strip())
+
+
+# --- Learning your signature from the Sent folder ---------------------------
+
+_SIGNOFF = re.compile(
+    r"^(kind|best|warm|warmest|many)?\s*(regards|thanks|thank you|wishes|cheers)\b.{0,20}$|"
+    r"^(cheers|thanks|thank you|sincerely|yours sincerely|yours faithfully|yours truly|best|all the best|"
+    r"talk soon|speak soon)\b[ ,.!]*$", re.I)
+_AGENT_FOOTER = re.compile(r"\n--\n[^\n]*(unsubscribe|requests like this)", re.I)
+_CONTACT_LINE = re.compile(r"@|www\.|https?://|\+?\d[\d\s().-]{6,}\d", re.I)
+
+
+@dataclass
+class LearnedSender:
+    name: str
+    email: str
+    signature: str
+    messages_checked: int
+
+
+def _norm_line(line: str) -> str:
+    return re.sub(r"\s+", " ", line).strip().lower()
+
+
+def learn_signature(texts: list[str]) -> str:
+    """Your signature: the block that ends most of your sent emails, after the sign-off line.
+
+    `texts` are your own message texts (quoted history removed), newest first.
+    """
+    docs: list[list[str]] = []
+    for text in texts:
+        text = _AGENT_FOOTER.split(text)[0]  # emails the agent drafted end with its opt-out footer
+        lines = [line.rstrip() for line in text.splitlines()]
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines:
+            docs.append(lines)
+    if len(docs) < 2:
+        return ""
+
+    def tidy(lines: list[str]) -> str:
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+        return "\n".join(lines).strip()
+
+    # 1. Most emails have a sign-off ("Kind regards,"); the signature is what follows it.
+    after_signoff: list[str] = []
+    for lines in docs:
+        tail = lines[-30:]
+        idx = max((i for i, line in enumerate(tail) if _SIGNOFF.match(line.strip())), default=None)
+        if idx is not None and idx < len(tail) - 1:
+            after_signoff.append(tidy(tail[idx + 1:]))
+    votes = Counter(_norm_line(sig.replace("\n", " | ")) for sig in after_signoff if sig)
+    if votes:
+        best, count = votes.most_common(1)[0]
+        if count >= 2:
+            return next(sig for sig in after_signoff if _norm_line(sig.replace("\n", " | ")) == best)
+
+    # 2. Otherwise: the longest run of closing lines shared by several emails, if it looks like a signature.
+    need = max(2, (len(docs) + 2) // 3)
+    for k in range(12, 1, -1):
+        blocks = Counter(tuple(_norm_line(l) for l in lines[-k:] if l.strip())
+                         for lines in docs if len([l for l in lines if l.strip()]) >= k)
+        if not blocks:
+            continue
+        block, count = blocks.most_common(1)[0]
+        if count >= need and len(block) >= 2 and any(_CONTACT_LINE.search(l) for l in block) \
+                and all(len(l) <= 90 for l in block):
+            for lines in docs:
+                if tuple(_norm_line(l) for l in lines[-k:] if l.strip()) == block:
+                    sig_lines = lines[-k:]
+                    while sig_lines and (not sig_lines[0].strip() or _SIGNOFF.match(sig_lines[0].strip())):
+                        sig_lines = sig_lines[1:]
+                    return tidy(sig_lines)
+    return ""
+
+
+def learn_sender(messages: list["MailInfo"]) -> LearnedSender | None:
+    """Your From name/address and signature, from your recent sent emails (newest first)."""
+    mine = [m for m in messages if m.from_addr]
+    if not mine:
+        return None
+    address = Counter(m.from_addr for m in mine).most_common(1)[0][0]
+    names = Counter(m.from_name for m in mine if m.from_addr == address and m.from_name)
+    own = [m.text for m in mine if m.from_addr == address and m.text]
+    return LearnedSender(names.most_common(1)[0][0] if names else "", address, learn_signature(own), len(own))
 
 
 def build_message(*, from_name: str, from_addr: str, to_addr: str, to_name: str, subject: str, body: str,
@@ -308,6 +401,15 @@ class Mailbox:
             return []
         uids = self._search(self.sent, ["SINCE", imap_date(since), "TO", quote(address)])
         return sorted(self._fetch(self.sent, uids[-10:]), key=_sort_key, reverse=True)
+
+    def recent_sent(self, limit: int = 25) -> list[MailInfo]:
+        if not self.sent:
+            return []
+        uids = self._search(self.sent, ["ALL"])
+        return sorted(self._fetch(self.sent, uids[-limit:]), key=_sort_key, reverse=True)
+
+    def learn_sender(self) -> LearnedSender | None:
+        return learn_sender(self.recent_sent())
 
     def bounces_for(self, address: str, since: date) -> list[MailInfo]:
         key = imap_date(since)

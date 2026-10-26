@@ -93,7 +93,7 @@ class LeadRun:
         self.research_budget = self.lc["max_research_per_run"]
         self.draft_budget = self.lc["max_drafts_per_run"] if max_drafts is None else max_drafts
         self.approved = {s.lower() for s in self.lc["approved_statuses"]}
-        self.sender_problems = compliance.sender_problems(self.cfg)
+        self._sender: compliance.Sender | None = None
         self.mailbox = None
         self.mailbox_failed = False
         self.drafted = 0
@@ -110,6 +110,13 @@ class LeadRun:
                 self.mailbox = None
                 self.report.add("Errors", f"IMAP connection failed, no drafts saved: {exc}")
         return self.mailbox
+
+    def _sender_details(self) -> compliance.Sender:
+        """From name/address and signature - learned from your Sent folder unless config.yaml says otherwise."""
+        if self._sender is None:
+            self._sender = compliance.resolve_sender(self.cfg, self._mailbox())
+            compliance.describe_sender(self._sender, self.cfg, self.report)
+        return self._sender
 
     def _finish(self, rows: list[Row], values: dict, notes: list[str], note: str, status: str | None = None) -> None:
         if status:
@@ -179,11 +186,6 @@ class LeadRun:
             report.add("Waiting for your review", line)
             self._finish(rows, values, notes, "Change status to Reviewed or Approved to get a draft")
             return
-        if self.sender_problems:
-            values.pop("researched_on", None)
-            self._finish(rows, values, notes, "Draft waiting for sender details in config.yaml")
-            return
-
         existing = self.ctx.state.draft(key, workflow, 1)
         if existing is not None:
             subject, created = existing["subject"], date.fromisoformat(existing["created_on"])
@@ -208,19 +210,23 @@ class LeadRun:
                 values.pop("researched_on", None)
                 self._finish(rows, values, notes, "Draft waiting (email connection failed)")
                 return
+            sender = self._sender_details()
+            if sender.problems:
+                values.pop("researched_on", None)
+                self._finish(rows, values, notes, "Draft waiting for sender details: " + ", ".join(sender.problems))
+                return
             try:
                 draft = compose()
             except AgentError as exc:
                 report.add("Errors", f"{row.text('company')}: drafting failed - {exc}")
                 return
             record_type = "lead" if kind == "buyer" else "quote"
-            body = compliance.finish_body(cfg, draft["body"], record_type=record_type,
-                                          source_url=row.text("source_url"))
+            body = sender.finish_body(cfg, draft["body"], record_type=record_type, source_url=row.text("source_url"))
             fallback = "Indonesian single-origin green coffee" if kind == "buyer" else "Request for quotation"
             msg = build_message(
-                from_name=cfg["sender"]["name"], from_addr=cfg["sender"]["email"], to_addr=email, to_name=contact,
+                from_name=sender.name, from_addr=sender.email, to_addr=email, to_name=contact,
                 subject=clean(draft["subject"]) or fallback, body=body,
-                unsubscribe_addr=compliance.unsubscribe_address(cfg), agent_tag=f"{workflow}; {row.ref}")
+                unsubscribe_addr=sender.unsubscribe_email, agent_tag=f"{workflow}; {row.ref}")
             self.draft_budget -= 1
             if _PLACEHOLDER.search(draft["body"]):
                 notes.append("Fill in the [bracketed] details before sending")
@@ -327,9 +333,6 @@ def run_leads(ctx: RunContext, max_drafts: int | None = None) -> int:
     run = LeadRun(ctx, stores, max_drafts)
     for name in stores:
         run.changes.touch(name)  # also writes any rows still queued from discovery
-    if groups and run.sender_problems:
-        ctx.report.add("Errors", "Drafts are off until these are filled in config.yaml: "
-                       + ", ".join(run.sender_problems))
     try:
         for key, rows in groups.items():
             if rows[0].kind == "freight":

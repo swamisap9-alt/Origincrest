@@ -65,15 +65,13 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
         commit(ctx, changes)
         return 0
 
-    sender_problems = compliance.sender_problems(cfg)
-    if sender_problems:
-        report.add("Errors", "Follow-up drafts are off until these are filled in config.yaml: "
-                   + ", ".join(sender_problems))
     budget = fc["max_drafts_per_run"] if max_drafts is None else max_drafts
     today = ctx.today
     drafted = 0
     mailbox = ctx.mailbox_factory()
     mailbox.connect()
+    sender = compliance.resolve_sender(cfg, mailbox)
+    compliance.describe_sender(sender, cfg, report)
     try:
         for key, rows in groups.items():
             row = rows[0]
@@ -189,8 +187,8 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
                 update(values, "Due for follow-up, but a draft to this address is already in Drafts - "
                                "send or delete it first")
                 continue
-            if sender_problems or budget <= 0:
-                why = "sender details missing in config.yaml" if sender_problems else "per-run draft cap reached"
+            if sender.problems or budget <= 0:
+                why = "sender details missing" if sender.problems else "per-run draft cap reached"
                 report.add("Flagged - due, not drafted", f"{label} ({why})")
                 update(values, f"Due for follow-up #{step} ({why})")
                 continue
@@ -209,17 +207,17 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             subject = clean(draft["subject"])
             if threaded:
                 subject = last_sent.subject if last_sent.subject.lower().startswith("re:") else f"Re: {last_sent.subject}"
-            body = compliance.finish_body(cfg, draft["body"], record_type=rtype, source_url=row.text("source_url"))
+            body = sender.finish_body(cfg, draft["body"], record_type=rtype, source_url=row.text("source_url"))
             if threaded and last_sent.text:
                 quoted = "\n".join("> " + line for line in last_sent.text[:2000].splitlines())
                 when = fmt_date(_local_date(last_sent, today))
-                body = f"{body}\nOn {when}, {cfg['sender']['name']} wrote:\n{quoted}\n"
+                body = f"{body}\nOn {when}, {sender.name} wrote:\n{quoted}\n"
             msg = build_message(
-                from_name=cfg["sender"]["name"], from_addr=cfg["sender"]["email"], to_addr=email,
+                from_name=sender.name, from_addr=sender.email, to_addr=email,
                 to_name=row.text("contact_name"), subject=subject, body=body,
                 in_reply_to=last_sent.message_id if threaded else "",
                 references=last_sent.references if threaded else "",
-                unsubscribe_addr=compliance.unsubscribe_address(cfg) if compliance.needs_unsubscribe(cfg, rtype) else "",
+                unsubscribe_addr=sender.unsubscribe_email if compliance.needs_unsubscribe(cfg, rtype) else "",
                 agent_tag=f"followup {step}; {row.ref}")
             if ctx.dry_run:
                 ctx.preview_dir.mkdir(parents=True, exist_ok=True)

@@ -11,7 +11,7 @@ from openpyxl.worksheet.table import Table
 
 from origincrest_agent.config import DEFAULTS, Config, _deep_merge
 from origincrest_agent.llm import ResearchResult
-from origincrest_agent.mailer import MailInfo
+from origincrest_agent.mailer import MailInfo, learn_sender
 from origincrest_agent.runtime import Report, RunContext
 from origincrest_agent.state import State
 from origincrest_agent.verify import Verifier
@@ -96,9 +96,9 @@ class FakeAgent:
 
 
 def mail(folder: str, when: datetime, from_addr: str, to: str, subject: str, text: str = "",
-         message_id: str = "", auto: bool = False) -> MailInfo:
+         message_id: str = "", auto: bool = False, from_name: str = "") -> MailInfo:
     return MailInfo(folder, "1", when, from_addr, [to], subject, message_id or f"<{abs(hash((subject, when)))}@x>",
-                    "", auto, text)
+                    "", auto, text, from_name)
 
 
 class FakeMailbox:
@@ -129,6 +129,9 @@ class FakeMailbox:
         hits = [m for m in self.inbox if (m.from_addr == address or (domain and m.from_addr.endswith("@" + domain)))
                 and m.when.date() >= since and not m.is_bounce]
         return sorted(hits, key=lambda m: m.when, reverse=True)
+
+    def learn_sender(self):
+        return learn_sender(sorted(self.sent, key=lambda m: m.when, reverse=True))
 
     def bounces_for(self, address: str, since: date) -> list[MailInfo]:
         return [m for m in self.inbox if m.is_bounce and address in m.text and m.when.date() >= since]

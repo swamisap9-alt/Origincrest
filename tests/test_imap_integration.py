@@ -100,3 +100,17 @@ def test_followup_end_to_end(cfg, agent, make_ctx, monkeypatch):
         draft = mb._fetch(mb.drafts, uids)[0]
     assert draft.subject == f"Re: RFQ {tag}"
     assert rfq_id in draft.references
+
+
+def test_signature_learned_from_sent_folder():
+    tag = uuid.uuid4().hex[:6]
+    signature = f"Swami K {tag}\nOriginCrest | 0400 000 000"
+    for i in range(2):
+        _put("Sent Mail", from_addr="Swami K <swami@example.com>", to_addr=f"lead{i}-{tag}@example.com",
+             subject=f"Note {i}", body=f"Hi,\n\nNote {i}.\n\nKind regards,\n{signature}",
+             when=utc(TODAY) + timedelta(minutes=i))
+    with _mailbox() as mb:
+        learned = mb.learn_sender()
+    assert learned.email == "swami@example.com"
+    assert learned.name == "Swami K"
+    assert learned.signature == signature

@@ -78,20 +78,24 @@ email:
   drafts_folder: ''
   sent_folder: ''
   reply_folders: []            # default: INBOX. Add folders your mail rules move replies into.
+  # auto   = use the signature you already use: copied from your recent sent emails, along with your
+  #          name and From address (`check` shows exactly what it found)
+  # config = build a signature from the sender details below
+  # none   = no signature (add your own when you send)
+  signature: auto
 
-# Your signature and the legally required sender details (Spam Act 2003).
-# These are not email content - every email is written fresh from the contact's row.
-# The agent won't create drafts until the <<EDIT ME>> values are replaced.
+# Optional. With signature: auto, leave these blank: anything you fill in overrides what's learned.
 sender:
-  name: '<<EDIT ME: your name>>'
+  name: ''
+  email: ''                    # From address; defaults to the one in your sent emails
+  business_name: OriginCrest   # used in the unsubscribe line
+  unsubscribe_email: ''        # defaults to the From address
+  # only used with signature: config
   title: ''
-  business_name: OriginCrest
   abn: ''
-  address: '<<EDIT ME: business postal address>>'
+  address: ''
   phone: ''
-  email: '<<EDIT ME: the address you send from>>'
   website: ''
-  unsubscribe_email: ''        # defaults to sender.email
 
 # Optional background about OriginCrest that emails may mention. Leave it as is and the agent uses
 # "OriginCrest supplies Indonesian single-origin green coffee - Sumatra, Sulawesi, Java and Flores -

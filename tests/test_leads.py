@@ -132,6 +132,7 @@ def test_approved_status_overrides_low_score(cfg, agent, mailbox, make_ctx):
 
 def test_no_drafts_until_sender_details_filled(cfg, agent, mailbox, make_ctx):
     seed_buyers(cfg)
+    cfg.data["email"]["signature"] = "config"  # signature from config.yaml, but it isn't filled in
     cfg.data["sender"]["address"] = "<<EDIT ME: business postal address>>"
     cfg.data["sender"]["phone"] = ""
     agent.research_queue = [research("No Email Roasters", 70), research("Hills Roasting Co", 82),
@@ -141,6 +142,29 @@ def test_no_drafts_until_sender_details_filled(cfg, agent, mailbox, make_ctx):
     assert mailbox.drafts == []
     assert "sender.address" in " ".join(ctx.report.sections["Errors"])
     assert sheet(cfg)["Hills Roasting Co"]["Researched on"] is None  # picked up again once fixed
+
+
+def test_your_own_signature_is_used(cfg, agent, mailbox, make_ctx):
+    """With no sender details in config.yaml, name, address and signature come from your Sent folder."""
+    seed_buyers(cfg)
+    cfg.data["sender"] = {"business_name": "OriginCrest"}
+    signature = "Swami Kailasam\nDirector | OriginCrest\nM 0400 111 222 | www.origincrest.com.au"
+    for days, (to, opener, signoff) in enumerate([("a@x.com.au", "Hi Jo,", "Kind regards,"),
+                                                   ("b@y.com.au", "Hello Sam,", "Thanks,"),
+                                                   ("c@z.com.au", "Hi team,", "Cheers,")], start=40):
+        mailbox.sent.append(mail("Sent", utc(TODAY - timedelta(days=days)), "swami@origincrest.com.au", to,
+                                 "Hello", text=f"{opener}\n\nSome message.\n\n{signoff}\n{signature}",
+                                 from_name="Swami Kailasam"))
+    agent.research_queue = [research("No Email Roasters", 70), research("Hills Roasting Co", 82),
+                            research("Low Fit Cafe", 30)]
+    ctx = make_ctx("leads")
+    run_leads(ctx)
+    msg = mailbox.drafts[0]
+    assert msg["From"] == "Swami Kailasam <swami@origincrest.com.au>"
+    body = msg.get_content()
+    assert "Kind regards,\n\nSwami Kailasam\nDirector | OriginCrest\nM 0400 111 222" in body
+    assert "unsubscribe" in body  # the opt-out footer is still added
+    assert "your Sent folder" in " ".join(ctx.report.sections["Signature"])
 
 
 def test_already_emailed_contact_goes_to_open(cfg, agent, mailbox, make_ctx):
@@ -187,12 +211,12 @@ def test_intro_is_written_from_the_contacts_own_row(cfg, agent, mailbox, make_ct
 
 
 def test_offer_section_is_optional(cfg, agent, mailbox, make_ctx):
-    from origincrest_agent.compliance import sender_problems
+    from origincrest_agent.compliance import config_sender_problems
     from origincrest_agent.prompts import DEFAULT_SUMMARY, offer_text
 
     cfg.data["offer"] = {"summary": "<<EDIT ME: e.g. OriginCrest imports...>>",
                          "origins": ["Sumatra - <<EDIT ME: e.g. Gayo>>", "Flores - <<EDIT ME>>"], "facts": [],
                          "call_to_action": ""}
-    assert sender_problems(cfg) == []
+    assert config_sender_problems(cfg) == []
     text = offer_text(cfg)
     assert DEFAULT_SUMMARY in text and "Origins offered: Sumatra; Flores" in text and "<<" not in text

@@ -158,15 +158,19 @@ DEFAULTS: dict[str, Any] = {
         "sent_folder": "",
         "reply_folders": [],
         "max_fetch_bytes": 5_000_000,
+        # auto: copy the signature (and your name / From address) from your recent sent emails.
+        # config: build the signature from the sender section below. none: no signature.
+        "signature": "auto",
     },
+    # Optional with email.signature: auto - anything filled in here overrides what's learned.
     "sender": {
-        "name": "<<EDIT ME: your name>>",
+        "name": "",
         "title": "",
         "business_name": "OriginCrest",
         "abn": "",
-        "address": "<<EDIT ME: business postal address>>",
+        "address": "",
         "phone": "",
-        "email": "<<EDIT ME: sending email address>>",
+        "email": "",
         "website": "",
         "unsubscribe_email": "",
     },

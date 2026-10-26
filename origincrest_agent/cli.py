@@ -73,12 +73,6 @@ def cmd_check(cfg, args) -> int:
                 where = f" - e.g. {', '.join(cat.examples[:3])}" if cat.examples else ""
                 print(f"        - {cat.label}  [{email}; from {cat.source}]{where}")
             ok &= bool(cats)
-    from .compliance import sender_problems
-
-    if problems := sender_problems(cfg):
-        print("[!] Fill in before drafting emails: " + ", ".join(problems))
-    else:
-        print("[OK] Sender details complete")
     key_env = cfg["claude"]["api_key_env"]
     print(("[OK] " if cfg.secret(key_env) else "[X] ") + f"{key_env} " + ("set" if cfg.secret(key_env) else "missing"))
     ok &= bool(cfg.secret(key_env))
@@ -90,9 +84,11 @@ def cmd_check(cfg, args) -> int:
             if not mb.sent:
                 print("[!] No Sent folder found - set email.sent_folder to one of the folders above, "
                       "otherwise follow-ups can't see what you've sent")
+            ok &= _print_sender(cfg, mb)
     except Exception as exc:  # noqa: BLE001 - report any connection/auth problem
         print(f"[X] IMAP: {exc}")
         ok = False
+        _print_sender(cfg, None)
     if args.api:
         try:
             agent = ClaudeAgent(cfg)
@@ -104,6 +100,24 @@ def cmd_check(cfg, args) -> int:
             print(f"[X] Claude API: {exc}")
             ok = False
     return 0 if ok else 1
+
+
+def _print_sender(cfg, mailbox) -> bool:
+    from .compliance import resolve_sender
+
+    sender = resolve_sender(cfg, mailbox)
+    if sender.problems:
+        print("[X] Can't draft yet - set: " + ", ".join(sender.problems))
+        return False
+    print(f"[OK] Drafts will be from: {sender.name} <{sender.email}>")
+    if sender.signature:
+        print(f"     signature (from {sender.signature_source}):")
+        for line in sender.signature.splitlines():
+            print(f"        | {line}")
+    else:
+        print("[!] No signature found in your Sent folder - drafts will have none (add it when you send, "
+              "or set email.signature: config)")
+    return True
 
 
 def cmd_init_sheets(cfg, args) -> int:
