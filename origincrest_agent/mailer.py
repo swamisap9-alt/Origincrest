@@ -175,10 +175,9 @@ def learn_signature(texts: list[str]) -> str:
         if idx is not None and idx < len(tail) - 1:
             after_signoff.append(tidy(tail[idx + 1:]))
     votes = Counter(_norm_line(sig.replace("\n", " | ")) for sig in after_signoff if sig)
-    if votes:
-        best, count = votes.most_common(1)[0]
-        if count >= 2:
-            return next(sig for sig in after_signoff if _norm_line(sig.replace("\n", " | ")) == best)
+    for sig in after_signoff:  # newest first: a changed signature wins once it's in two emails
+        if sig and votes[_norm_line(sig.replace("\n", " | "))] >= 2:
+            return sig
 
     # 2. Otherwise: the longest run of closing lines shared by several emails, if it looks like a signature.
     need = max(2, (len(docs) + 2) // 3)
@@ -307,24 +306,40 @@ class Mailbox:
                 name = name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
             self.folders[name] = {f.lower() for f in m.group("flags").split()}
 
-        def special(flag: str, kind: str) -> str:
-            for name, flags in self.folders.items():
-                if flag in flags:
-                    return name
-            for wanted in _FOLDER_NAMES.get(kind, []):
-                for name in self.folders:
-                    if re.split(r"[./]", name)[-1].strip().lower() == wanted:
-                        return name
-            return ""
+        def special(kind: str) -> str:
+            candidates = self.folder_candidates(kind)
+            return candidates[0] if candidates else ""
 
-        self.drafts = self.drafts or special("\\drafts", "drafts")
-        self.sent = self.sent or special("\\sent", "sent")
+        self.drafts = self.drafts or special("drafts")
+        self.sent = self.sent or special("sent")
         if not self.reply_folders:
-            all_mail = special("\\all", "all")
+            all_mail = special("all")
             self.reply_folders = [all_mail] if all_mail else ["INBOX"]
         if not self.drafts:
             raise RuntimeError("Couldn't find the Drafts folder; set email.drafts_folder in config.yaml")
         log.debug("IMAP folders: drafts=%s sent=%s replies=%s", self.drafts, self.sent, self.reply_folders)
+
+    def folder_candidates(self, kind: str) -> list[str]:
+        """Folders that look like Drafts / Sent / All mail: server-flagged ones first, then by name."""
+        flag = {"drafts": "\\drafts", "sent": "\\sent", "all": "\\all"}[kind]
+        names = [name for name, flags in self.folders.items() if flag in flags]
+        for wanted in _FOLDER_NAMES.get(kind, []):
+            names += [n for n in self.folders
+                      if re.split(r"[./]", n)[-1].strip().lower() == wanted and n not in names]
+        return names
+
+    def message_count(self, folder: str) -> int:
+        typ, data = self.imap.select(quote(folder), readonly=True)
+        try:
+            return int(data[0]) if typ == "OK" else -1
+        except (TypeError, ValueError, IndexError):
+            return -1
+
+    def agent_drafts(self, folder: str = "") -> list[MailInfo]:
+        """Drafts the agent saved (they carry an X-OriginCrest-Agent header), newest first."""
+        folder = folder or self.drafts
+        uids = self._search(folder, ["HEADER", "X-OriginCrest-Agent", '""'])
+        return sorted(self._fetch(folder, uids[-50:], include_body=False), key=_sort_key, reverse=True)
 
     # drafts ------------------------------------------------------------
     def append_draft(self, msg: EmailMessage) -> None:
@@ -406,7 +421,7 @@ class Mailbox:
         if not self.sent:
             return []
         uids = self._search(self.sent, ["ALL"])
-        return sorted(self._fetch(self.sent, uids[-limit:]), key=_sort_key, reverse=True)
+        return sorted(self._fetch(self.sent, uids[-limit:]), key=lambda m: (_sort_key(m), int(m.uid)), reverse=True)
 
     def learn_sender(self) -> LearnedSender | None:
         return learn_sender(self.recent_sent())

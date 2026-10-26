@@ -88,7 +88,8 @@ def resolve_sender(cfg, mailbox=None) -> Sender:
     username = str(cfg["email"].get("username", ""))
     address = (_filled(s.get("email")) or (learned.email if learned else "")
                or (username if "@" in username and not _PLACEHOLDER.search(username) else ""))
-    name = _filled(s.get("name")) or (learned.name if learned else "") or business
+    learned_name = learned.name if learned and "@" not in learned.name else ""  # some apps put the address there
+    name = _filled(s.get("name")) or learned_name
     problems: list[str] = []
     if mode not in SIGNATURE_MODES:
         problems.append(f"email.signature must be one of {', '.join(SIGNATURE_MODES)}")
@@ -112,5 +113,5 @@ def describe_sender(sender: Sender, cfg, report) -> None:
         report.add("Signature", "Couldn't find your signature in the Sent folder, so drafts have none - add it "
                                 "when you send, or set email.signature: config")
     else:
-        report.add("Signature", f"Drafts from {sender.name} <{sender.email}>, signature from "
+        report.add("Signature", f"Drafts from {sender.name or '(no name)'} <{sender.email}>, signature from "
                                 f"{sender.signature_source}")

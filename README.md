@@ -151,6 +151,11 @@ styled like your existing headers, and Excel tables and filters are stretched to
 
 ## Good to know
 
+- **Can't see the drafts?** Run `scripts\run.cmd drafts`. It shows the server folder the agent saves to and
+  lists the drafts in it. In Outlook, server drafts are in the account's own Drafts folder (sometimes under
+  Inbox), not "Drafts (This computer only)". Webmail always shows them. If your mail app uses a different
+  folder, set `email.drafts_folder` to it.
+
 - **Email setup.** The agent works with any standard IMAP server. Drafts appear in every app connected to the
   mailbox by IMAP (Outlook, Thunderbird, phone, webmail). Two things matter for follow-ups:
   - your mail apps must use **IMAP, not POP3**, or replies get downloaded off the server before the agent
@@ -190,6 +195,7 @@ scripts\run.cmd discover [--dry-run] [--workbook rfq|master] [--categories "Roas
 scripts\run.cmd leads [--dry-run] [--max-drafts N]
 scripts\run.cmd followup [--dry-run] [--max-drafts N]
 scripts\run.cmd flush        # write rows still queued from a run when Excel was open
+scripts\run.cmd drafts       # which mail folder drafts go to, and the drafts the agent saved there
 ```
 
 Each search is one category in one region (Adelaide/SA or other states). Each week focuses on different areas

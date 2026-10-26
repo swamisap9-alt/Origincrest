@@ -120,3 +120,12 @@ def test_html_only_sent_email_text():
     msg = parse_message(raw, "Sent", "1")
     assert msg.from_name == "Swami"
     assert msg.text.splitlines()[-3:] == ["Kind regards,", "Swami Kailasam", "OriginCrest"]
+
+
+def test_newest_signature_wins_after_a_change():
+    from origincrest_agent.mailer import learn_signature
+
+    new = SIG.replace("0400 111 222", "0400 999 888")
+    texts = [f"Hi,\n\nA.\n\nRegards,\n{new}", f"Hi,\n\nB.\n\nRegards,\n{new}"] + \
+            [f"Hi,\n\nOld {i}.\n\nRegards,\n{SIG}" for i in range(5)]  # newest first
+    assert learn_signature(texts) == new

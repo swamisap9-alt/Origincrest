@@ -84,6 +84,9 @@ def cmd_check(cfg, args) -> int:
             if not mb.sent:
                 print("[!] No Sent folder found - set email.sent_folder to one of the folders above, "
                       "otherwise follow-ups can't see what you've sent")
+            if len(others := [f for f in mb.folder_candidates("drafts") if f != mb.drafts]) > 0:
+                print(f"[!] More than one Drafts-like folder ({', '.join([mb.drafts] + others)}). Drafts go to "
+                      f"'{mb.drafts}'; if your mail app shows another one, set email.drafts_folder to it")
             ok &= _print_sender(cfg, mb)
     except Exception as exc:  # noqa: BLE001 - report any connection/auth problem
         print(f"[X] IMAP: {exc}")
@@ -109,7 +112,7 @@ def _print_sender(cfg, mailbox) -> bool:
     if sender.problems:
         print("[X] Can't draft yet - set: " + ", ".join(sender.problems))
         return False
-    print(f"[OK] Drafts will be from: {sender.name} <{sender.email}>")
+    print(f"[OK] Drafts will be from: {f'{sender.name} <{sender.email}>' if sender.name else sender.email}")
     if sender.signature:
         print(f"     signature (from {sender.signature_source}):")
         for line in sender.signature.splitlines():
@@ -118,6 +121,35 @@ def _print_sender(cfg, mailbox) -> bool:
         print("[!] No signature found in your Sent folder - drafts will have none (add it when you send, "
               "or set email.signature: config)")
     return True
+
+
+def cmd_drafts(cfg, args) -> int:
+    """Which server folder the agent saves drafts to, and the drafts it has saved there."""
+    try:
+        mb = Mailbox.from_config(cfg)
+        mb.connect()
+    except Exception as exc:  # noqa: BLE001 - report any connection/auth problem
+        print(f"[X] IMAP: {exc}")
+        return 1
+    try:
+        how = "set by email.drafts_folder" if cfg["email"]["drafts_folder"] else "detected automatically"
+        print(f"The agent saves drafts to the server folder '{mb.drafts}' ({how}).")
+        folders = [mb.drafts] + [f for f in mb.folder_candidates("drafts") if f != mb.drafts]
+        for folder in folders:
+            saved = mb.agent_drafts(folder)
+            print(f"\n'{folder}': {mb.message_count(folder)} message(s), {len(saved)} saved by the agent")
+            for d in saved[:25]:
+                when = d.when.astimezone().strftime("%d/%m %H:%M") if d.when else "?"
+                print(f"   {when}  to {', '.join(d.to_addrs)}  \"{d.subject}\"")
+        print("\nCan't see them in your mail app?")
+        print(" - Outlook: drafts saved on the server are in the account's own Drafts folder (it can sit under")
+        print("   Inbox), not in 'Drafts (This computer only)'. Press F9 to sync.")
+        print(" - Webmail always shows the server's Drafts folder - a quick way to confirm they're there.")
+        print(" - If your app uses a different folder from the list above, set email.drafts_folder to it in")
+        print("   config.yaml; drafts from the next run go there.")
+    finally:
+        mb.close()
+    return 0
 
 
 def cmd_init_sheets(cfg, args) -> int:
@@ -182,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("check", help="check config, workbooks, IMAP login and API key")
     p.add_argument("--api", action="store_true", help="also make a tiny Claude API call")
+    sub.add_parser("drafts", help="show which mail folder drafts are saved to, and the drafts saved there")
     p = sub.add_parser("init-sheets", help="create the new-lead tabs (Adelaide / other states) in each workbook")
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("discover", help="workflow 1: find new leads for each workbook")
@@ -211,4 +244,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_check(cfg, args)
     if args.command == "init-sheets":
         return cmd_init_sheets(cfg, args)
+    if args.command == "drafts":
+        return cmd_drafts(cfg, args)
     return run_workflow(cfg, args)

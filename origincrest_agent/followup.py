@@ -211,7 +211,7 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             if threaded and last_sent.text:
                 quoted = "\n".join("> " + line for line in last_sent.text[:2000].splitlines())
                 when = fmt_date(_local_date(last_sent, today))
-                body = f"{body}\nOn {when}, {sender.name} wrote:\n{quoted}\n"
+                body = f"{body}\nOn {when}, {sender.name or sender.email} wrote:\n{quoted}\n"
             msg = build_message(
                 from_name=sender.name, from_addr=sender.email, to_addr=email,
                 to_name=row.text("contact_name"), subject=subject, body=body,

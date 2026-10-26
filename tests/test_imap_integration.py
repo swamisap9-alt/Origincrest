@@ -4,7 +4,7 @@ import imaplib
 import os
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import format_datetime
 
@@ -108,9 +108,26 @@ def test_signature_learned_from_sent_folder():
     for i in range(2):
         _put("Sent Mail", from_addr="Swami K <swami@example.com>", to_addr=f"lead{i}-{tag}@example.com",
              subject=f"Note {i}", body=f"Hi,\n\nNote {i}.\n\nKind regards,\n{signature}",
-             when=utc(TODAY) + timedelta(minutes=i))
+             when=datetime.now(timezone.utc) + timedelta(seconds=i))
     with _mailbox() as mb:
         learned = mb.learn_sender()
     assert learned.email == "swami@example.com"
     assert learned.name == "Swami K"
     assert learned.signature == signature
+
+
+def test_agent_drafts_listed_and_duplicate_drafts_folders_found():
+    host, port, user, password = _parts()
+    imap = imaplib.IMAP4(host, port)
+    imap.login(user, password)
+    imap.create(quote("Old/Drafts"))  # a second Drafts-like folder, as some hosts have
+    imap.logout()
+    tag = uuid.uuid4().hex[:6]
+    msg = build_message(from_name="", from_addr="swami@example.com", to_addr=f"rfq-{tag}@example.com", to_name="",
+                        subject=f"RFQ {tag}", body="Please quote", agent_tag="rfq; test")
+    with _mailbox() as mb:
+        mb.append_draft(msg)
+        assert mb.folder_candidates("drafts") == ["Drafts", "Old/Drafts"]
+        assert f"RFQ {tag}" in [d.subject for d in mb.agent_drafts()]
+        assert mb.agent_drafts("Old/Drafts") == []
+        assert mb.message_count("Drafts") >= 1
