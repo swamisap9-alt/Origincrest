@@ -30,7 +30,7 @@ def test_quote_followup_threaded(cfg, agent, mailbox, make_ctx):
     assert msg["To"] == "Jo Bloggs <quotes@seaway.com.au>"
     assert msg["Subject"] == "Re: RFQ: 1x20ft green coffee Belawan to Adelaide"
     assert msg["In-Reply-To"] == "<rfq-1@origincrest.com.au>"
-    assert "List-Unsubscribe" not in msg  # RFQ follow-ups aren't marketing
+    assert "requests like this" in msg.get_content()  # short RFQ opt-out line, not the marketing footer
     assert "> Hi Jo, could you quote" in msg.get_content()
 
     rows = rfq_rows(cfg)
@@ -79,8 +79,10 @@ def test_unsubscribe_is_honoured(cfg, agent, mailbox, make_ctx):
 
 
 def test_lead_intro_sent_becomes_open_and_uses_10_days(cfg, agent, mailbox, make_ctx):
-    store = WorkbookStore("rfq", cfg.workbook_path("rfq"), cfg).load()
-    view = store.get_or_create("Roasters - Adelaide", "roaster")
+    # A lead in the master workbook's new-lead tab is followed up too (follow-ups otherwise read only the
+    # RFQ workbook).
+    store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
+    view = store.get_or_create("New Leads - Adelaide", "buyer")
     view.append({"company": "Hills Roasting Co", "email": "info@hillsroasting.com.au",
                  "status": "Intro drafted - to review", "draft_created": TODAY - timedelta(days=12),
                  "record_type": "Lead"})
@@ -88,7 +90,7 @@ def test_lead_intro_sent_becomes_open_and_uses_10_days(cfg, agent, mailbox, make
     mailbox.sent.append(mail("Sent", utc(TODAY - timedelta(days=11)), "hello@origincrest.com.au",
                              "info@hillsroasting.com.au", "Indonesian green for your range", text="Hi there"))
     run_followup(make_ctx("followup"))
-    ws = openpyxl.load_workbook(cfg.workbook_path("rfq"))["Roasters - Adelaide"]
+    ws = openpyxl.load_workbook(cfg.workbook_path("master"))["New Leads - Adelaide"]
     headers = [c.value for c in ws[1]]
     row = dict(zip(headers, (c.value for c in ws[2])))
     assert row["Status"] == "Open"
@@ -124,3 +126,21 @@ def test_failed_sheet_write_does_not_duplicate_draft(cfg, agent, mailbox, make_c
     seaway = rfq_rows(cfg)["Seaway Logistics"]
     assert seaway["Follow-ups drafted"] == 1
     assert seaway["Next action date"].date() == TODAY + timedelta(days=5)
+
+
+def test_sent_rfq_becomes_open_with_5_day_chase(cfg, agent, mailbox, make_ctx):
+    store = WorkbookStore("rfq", cfg.workbook_path("rfq"), cfg).load()
+    store.get_or_create("New Freight-3PL - Other States", "freight").append({
+        "company": "Sydney Bonded Warehousing", "email": "rfq@sbw.com.au", "status": "RFQ drafted - to review",
+        "draft_created": TODAY - timedelta(days=3), "record_type": "Quote"})
+    store.save(cfg.data_dir / "backups")
+    mailbox.sent.append(mail("Sent", utc(TODAY - timedelta(days=2)), "hello@origincrest.com.au", "rfq@sbw.com.au",
+                             "RFQ: pallet storage Sydney", text="Please quote"))
+    ctx = make_ctx("followup")
+    run_followup(ctx)
+    ws = openpyxl.load_workbook(cfg.workbook_path("rfq"))["New Freight-3PL - Other States"]
+    headers = [c.value for c in ws[1]]
+    row = dict(zip(headers, (c.value for c in ws[2])))
+    assert row["Status"] == "Open"
+    assert row["Next action date"].date() == TODAY + timedelta(days=3)  # sent 2 days ago + 5
+    assert not [m for m in mailbox.drafts if "sbw" in m["To"]]  # not due yet

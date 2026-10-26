@@ -75,7 +75,23 @@ def test_dedupe_index_spans_all_tabs(cfg):
 
 def test_new_tab_has_full_header(cfg):
     store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
-    view = store.get_or_create("Roasters - Adelaide", "roaster")
-    assert view.kind == "roaster"
+    view = store.get_or_create("New Leads - Adelaide", "buyer")
+    assert view.kind == "buyer"
     for key in ("company", "email", "source_url", "status", "fit_score", "next_action_date"):
         assert view.has(key)
+
+
+def test_name_matches_need_more_than_one_short_word():
+    index = DedupeIndex()
+    index.add("row 1", company="Hills Cafe Group")
+    assert index.match(company="Hills Roasting Co") is None
+    index.add("row 2", company="Allpress Espresso Pty Ltd")
+    assert index.match(company="Allpress Coffee Roastery") is not None  # one distinctive long word
+
+
+def test_same_name_different_websites_are_different_companies():
+    index = DedupeIndex()
+    index.add("row 1", company="Bean Bar", website="beanbar.com.au")
+    assert index.match(company="Bean Bar", website="beanbarperth.com.au") is None
+    assert index.match(company="Bean Bar") is not None
+    assert index.match(company="Bean Bar Cafe", website="https://www.beanbar.com.au") is not None

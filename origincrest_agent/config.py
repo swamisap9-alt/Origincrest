@@ -23,30 +23,25 @@ DEFAULTS: dict[str, Any] = {
         "rfq": {
             "path": _ORIGINCREST
             + r"\Origincrest 3PL and Freight forwarder contacts RFQ\OriginCrest_Freight_3PL_Contacts_RFQ.xlsx",
-            # Tabs not named under `tabs` are treated as this kind of row.
+            # Rows in your own tabs count as this kind unless a Category / Record type column says otherwise.
             "default_kind": "freight",
         },
         "master": {
             "path": _ORIGINCREST
             + r"\OriginCrest enquiries\Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx",
-            "default_kind": "freight",
+            "default_kind": "buyer",
         },
     },
     "tabs": {
-        "roasters_australia": "Roasters - Australia",
-        "roasters_adelaide": "Roasters - Adelaide",
-        "freight_australia": "Freight-3PL - Australia",
-        "freight_adelaide": "Freight-3PL - Adelaide",
-        # Other existing tabs that hold buyers/roasters (lead rows).
-        "extra_roaster_tabs": [],
         # Tabs the agent must never read or write.
         "ignore_tabs": [],
     },
     "statuses": {
         "new": "New - to review",
         "intro_drafted": "Intro drafted - to review",
+        "rfq_drafted": "RFQ drafted - to review",
         "low_fit": "Researched - low fit",
-        "no_email": "Researched - no public email",
+        "no_email": "No public email",
         "open": "Open",
         "replied": "Replied - review",
         "unsubscribed": "Unsubscribed - do not contact",
@@ -82,20 +77,46 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "discovery": {
-        "workbooks": ["rfq", "master"],
-        "segments": ["roasters_adelaide", "roasters_australia", "freight_adelaide", "freight_australia"],
-        "max_new_rows_per_run": 30,
-        "max_new_rows_per_segment": 10,
-        "candidates_per_segment": 12,
-        "web_searches_per_segment": 8,
-        "web_fetches_per_segment": 8,
+        # One profile per workbook: what to search for and which two tabs new leads go to
+        # (Adelaide / South Australia, and all other states together).
+        "profiles": {
+            "rfq": {
+                "adelaide_tab": "New Freight-3PL - Adelaide",
+                "other_tab": "New Freight-3PL - Other States",
+                "categories": ["Freight forwarders, customs brokers & 3PLs"],
+                "category_tabs": [],
+            },
+            "master": {
+                "adelaide_tab": "New Leads - Adelaide",
+                "other_tab": "New Leads - Other States",
+                "categories": [],
+                # Search categories are read from the Category column of these tabs.
+                # match: keep only categories containing one of these words (empty = all).
+                # fallback: used if the tab has none of them.
+                "category_tabs": [
+                    {"tab": "New Prospects Oct-26"},
+                    {"tab": "All contacts", "match": ["importer", "roaster", "wholesal", "trader"],
+                     "fallback": "Importers, Roasters, Wholesalers & Traders"},
+                ],
+                "exclude_categories": [],
+            },
+        },
+        # When a workbook lists many categories, each weekly run covers this many (rotating).
+        "categories_per_run": 4,
+        # Caps per run: new rows per workbook, and per category + region search.
+        "max_new_rows_per_workbook": 20,
+        "max_new_rows_per_segment": 6,
+        "candidates_per_segment": 8,
+        "web_searches_per_segment": 6,
+        "web_fetches_per_segment": 6,
         "effort": "medium",
         # Fetch each source page and keep only contact details that appear on it.
         "verify_contacts": True,
         "run_leads_after": True,
     },
     "leads": {
-        "workbooks": ["rfq", "master"],
+        # Workflow 2 works on the new-lead tabs above, plus any tabs you list here.
+        "extra_tabs": [],
         "max_research_per_run": 10,
         "max_drafts_per_run": 8,
         "min_fit_score_for_draft": 55,
@@ -106,7 +127,7 @@ DEFAULTS: dict[str, Any] = {
         # Anything else (e.g. "Customer", "In discussion") is left alone.
         "eligible_statuses": ["", "new", "new - to review", "reviewed", "approved", "to contact", "lead",
                               "prospect"],
-        # Your override: these statuses get an intro draft even if the fit score is low.
+        # Your override: these statuses get a draft even if the fit score is low.
         "approved_statuses": ["approved"],
         "research_cache_days": 120,
         "web_searches_per_company": 5,
@@ -115,6 +136,7 @@ DEFAULTS: dict[str, Any] = {
         "email_effort": "medium",
     },
     "followup": {
+        # Every tab of these workbooks, plus the new-lead tabs of all workbooks.
         "workbooks": ["rfq"],
         "open_statuses": ["open"],
         "quote_days": 5,
@@ -148,20 +170,23 @@ DEFAULTS: dict[str, Any] = {
         "website": "",
         "unsubscribe_email": "",
     },
+    # Optional background about OriginCrest for the emails. Blank values fall back to a default.
     "offer": {
-        "summary": "<<EDIT ME: one or two sentences on what OriginCrest supplies>>",
-        "origins": [
-            "Sumatra",
-            "Sulawesi",
-            "Java",
-            "Flores",
-        ],
+        "summary": "",
+        "origins": ["Sumatra", "Sulawesi", "Java", "Flores"],
         "facts": [],
         "call_to_action": "Offer to send green samples and a current offer sheet.",
     },
+    "rfq": {
+        # Optional: what you need quoted (lanes, volumes, services). Left blank, the agent works it out
+        # from the rows in your RFQ workbook and the last RFQ you sent, and leaves [placeholders] in the
+        # draft for anything it can't find.
+        "requirements": "",
+        "example_workbook": "rfq",
+    },
     "compliance": {
-        # Record types whose emails get the Spam Act unsubscribe footer.
-        "unsubscribe_footer_for": ["lead"],
+        # Record types whose emails get the Spam Act opt-out line (lead = marketing footer, quote = short line).
+        "unsubscribe_footer_for": ["lead", "quote"],
     },
     "excel": {
         "lock_wait_minutes": 5,
@@ -216,6 +241,16 @@ class Config:
 
     def status(self, key: str) -> str:
         return self.data["statuses"][key]
+
+    def profile(self, workbook: str) -> dict | None:
+        return self.data["discovery"]["profiles"].get(workbook)
+
+    def lead_tabs(self, workbook: str) -> set[str]:
+        """Tabs in a workbook that hold the agent's new leads (plus leads.extra_tabs)."""
+        tabs = set(self.data["leads"].get("extra_tabs") or [])
+        if p := self.profile(workbook):
+            tabs |= {p["adelaide_tab"], p["other_tab"]}
+        return tabs
 
     @property
     def skip_statuses(self) -> set[str]:

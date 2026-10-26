@@ -23,10 +23,6 @@ def sender_problems(cfg) -> list[str]:
             problems.append(f"sender.{key}")
     if not (s.get("address") or s.get("phone")) or _PLACEHOLDER.search(str(s.get("address", ""))):
         problems.append("sender.address (or sender.phone)")
-    offer = cfg["offer"]
-    for key in ("summary", "origins", "facts"):
-        if _PLACEHOLDER.search(str(offer.get(key, ""))):
-            problems.append(f"offer.{key}")
     return problems
 
 
@@ -46,7 +42,10 @@ def signature(cfg) -> str:
     return "\n".join(lines)
 
 
-def unsubscribe_footer(cfg, source_url: str = "") -> str:
+def unsubscribe_footer(cfg, source_url: str = "", record_type: str = "lead") -> str:
+    if record_type == "quote":
+        return (f"If you'd rather not receive requests like this from {cfg['sender']['business_name']}, reply "
+                "\"unsubscribe\" and we won't contact you again.")
     where = host_of(source_url)
     reason = f"You're receiving this because your business email is published on {where}. " if where else ""
     return (reason + f"If you'd rather not hear from {cfg['sender']['business_name']} again, reply with "
@@ -61,5 +60,5 @@ def needs_unsubscribe(cfg, record_type: str) -> bool:
 def finish_body(cfg, body: str, *, record_type: str, source_url: str = "") -> str:
     text = body.rstrip() + "\n\n" + signature(cfg)
     if needs_unsubscribe(cfg, record_type):
-        text += "\n\n--\n" + unsubscribe_footer(cfg, source_url)
+        text += "\n\n--\n" + unsubscribe_footer(cfg, source_url, record_type)
     return text + "\n"

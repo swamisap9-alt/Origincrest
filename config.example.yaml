@@ -11,37 +11,54 @@ data_dir: '%LOCALAPPDATA%\OriginCrestAgent'
 workbooks:
   rfq:
     path: 'C:\Users\swami\OneDrive\Documents\Origincrest\Origincrest 3PL and Freight forwarder contacts RFQ\OriginCrest_Freight_3PL_Contacts_RFQ.xlsx'
-    default_kind: freight      # existing tabs here hold RFQ / freight rows (5-day follow-ups)
+    default_kind: freight      # rows here are RFQ / logistics contacts (5-day follow-ups)
   master:
     path: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest enquiries\Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx'
-    default_kind: freight
+    default_kind: buyer        # rows here are coffee businesses unless their Category says logistics
 
-# Tabs the agent creates (if missing) in both workbooks for new discoveries.
 tabs:
-  roasters_australia: Roasters - Australia
-  roasters_adelaide: Roasters - Adelaide
-  freight_australia: Freight-3PL - Australia
-  freight_adelaide: Freight-3PL - Adelaide
-  extra_roaster_tabs: []       # other existing tabs that list buyers/roasters, e.g. ["Buyers"]
   ignore_tabs: []              # tabs the agent must never touch, e.g. ["Pricing"]
 
 claude:
   model: claude-opus-5-5
 
-discovery:                      # Workflow 1 (weekly)
-  workbooks: [rfq, master]
-  max_new_rows_per_run: 30
-  max_new_rows_per_segment: 10
+# Workflow 1 (weekly). Each workbook gets its own kind of lead, split into two tabs:
+# Adelaide / South Australia, and all other states together.
+discovery:
+  profiles:
+    rfq:                        # freight forwarders, customs brokers and 3PLs -> RFQ emails
+      adelaide_tab: New Freight-3PL - Adelaide
+      other_tab: New Freight-3PL - Other States
+      categories: ['Freight forwarders, customs brokers & 3PLs']
+    master:                     # categories read from your own tabs -> intro emails (RFQs for logistics ones)
+      adelaide_tab: New Leads - Adelaide
+      other_tab: New Leads - Other States
+      category_tabs:
+        - tab: New Prospects Oct-26            # every category in its Category column
+        - tab: All contacts                    # only the categories containing these words
+          match: [importer, roaster, wholesal, trader]
+          fallback: 'Importers, Roasters, Wholesalers & Traders'
+      exclude_categories: []    # e.g. ['Cafe groups']
+  categories_per_run: 4         # with more categories than this, each week takes the next few
+  max_new_rows_per_workbook: 20
+  max_new_rows_per_segment: 6   # per category per region
   run_leads_after: true         # go straight on to workflow 2 for the new rows
 
-leads:                          # Workflow 2
-  workbooks: [rfq, master]
+# Workflow 2: drafts for the rows in the new-lead tabs.
+leads:
+  extra_tabs: []                # other tabs whose rows should also get drafts
   max_research_per_run: 10
   max_drafts_per_run: 8
   min_fit_score_for_draft: 55
   draft_for_unreviewed: true    # false = only draft after you change "New - to review" to "Reviewed"/"Approved"
 
-followup:                       # Workflow 3 (weekdays)
+# What RFQ emails ask forwarders / 3PLs to quote. Optional: left blank, the agent uses the rows in
+# your RFQ workbook and the last RFQ you sent, and writes [placeholders] for anything it can't find.
+rfq:
+  requirements: ''              # e.g. '1-2 x 20ft FCL per quarter, green coffee in jute bags, FOB Belawan -> Port Adelaide; customs + DAFF clearance; delivery to our warehouse'
+
+# Workflow 3 (weekdays): all tabs of these workbooks, plus every workbook's new-lead tabs.
+followup:
   workbooks: [rfq]
   open_statuses: [Open]
   quote_days: 5
@@ -62,7 +79,8 @@ email:
   sent_folder: ''
   reply_folders: []            # default: INBOX. Add folders your mail rules move replies into.
 
-# Used in every email signature and the unsubscribe footer (Spam Act 2003).
+# Your signature and the legally required sender details (Spam Act 2003).
+# These are not email content - every email is written fresh from the contact's row.
 # The agent won't create drafts until the <<EDIT ME>> values are replaced.
 sender:
   name: '<<EDIT ME: your name>>'
@@ -75,13 +93,10 @@ sender:
   website: ''
   unsubscribe_email: ''        # defaults to sender.email
 
-# What the emails may say about OriginCrest. The agent states nothing beyond this.
+# Optional background about OriginCrest that emails may mention. Leave it as is and the agent uses
+# "OriginCrest supplies Indonesian single-origin green coffee - Sumatra, Sulawesi, Java and Flores -
+# to Australian roasters". Add facts only if you want them used (the agent never invents prices,
+# certifications or volumes).
 offer:
-  summary: '<<EDIT ME: e.g. OriginCrest imports traceable, single-origin Indonesian green coffee for Australian specialty roasters.>>'
-  origins:
-    - 'Sumatra - <<EDIT ME: e.g. Gayo, wet-hulled, notes>>'
-    - 'Sulawesi - <<EDIT ME>>'
-    - 'Java - <<EDIT ME>>'
-    - 'Flores - <<EDIT ME>>'
+  summary: ''
   facts: []                    # e.g. ["Green samples (200 g) posted free within Australia", "Stock held in Adelaide"]
-  call_to_action: Offer to send green samples and a current offer sheet.

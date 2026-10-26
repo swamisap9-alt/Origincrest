@@ -16,6 +16,7 @@ from typing import Any
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS discovered (
     id INTEGER PRIMARY KEY,
+    workbook TEXT NOT NULL DEFAULT '',
     company TEXT NOT NULL,
     kind TEXT NOT NULL,
     keys TEXT NOT NULL,
@@ -70,22 +71,25 @@ class State:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        columns = {row["name"] for row in self.db.execute("PRAGMA table_info(discovered)")}
+        if "workbook" not in columns:  # database from an earlier version
+            self.db.execute("ALTER TABLE discovered ADD COLUMN workbook TEXT NOT NULL DEFAULT ''")
         self.db.commit()
 
     def close(self) -> None:
         self.db.close()
 
     # discovery ---------------------------------------------------------
-    def discovered_keys(self) -> set[str]:
-        keys: set[str] = set()
-        for row in self.db.execute("SELECT keys FROM discovered"):
-            keys.update(json.loads(row["keys"]))
-        return keys
+    def discovered_entities(self, workbook: str) -> list[list[str]]:
+        """Duplicate-check keys of every company discovery added to this workbook before."""
+        return [json.loads(row["keys"]) for row in
+                self.db.execute("SELECT keys FROM discovered WHERE workbook IN (?, '')", (workbook,))]
 
-    def add_discovered(self, company: str, kind: str, keys: set[str], source_url: str, found_on: date) -> None:
+    def add_discovered(self, workbook: str, company: str, kind: str, keys: set[str], source_url: str,
+                       found_on: date) -> None:
         self.db.execute(
-            "INSERT INTO discovered (company, kind, keys, source_url, found_on) VALUES (?,?,?,?,?)",
-            (company, kind, json.dumps(sorted(keys)), source_url, found_on.isoformat()),
+            "INSERT INTO discovered (workbook, company, kind, keys, source_url, found_on) VALUES (?,?,?,?,?,?)",
+            (workbook, company, kind, json.dumps(sorted(keys)), source_url, found_on.isoformat()),
         )
         self.db.commit()
 

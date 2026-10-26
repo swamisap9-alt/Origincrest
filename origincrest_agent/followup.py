@@ -24,12 +24,7 @@ def _utc(dt: datetime) -> datetime:
 
 
 def _record_type(row: Row) -> str:
-    value = row.text("record_type").lower()
-    if value.startswith("lead"):
-        return "lead"
-    if value.startswith(("quote", "rfq")):
-        return "quote"
-    return "lead" if row.kind == "roaster" else "quote"
+    return "lead" if row.kind == "buyer" else "quote"
 
 
 def _local_date(info: MailInfo, fallback: date) -> date:
@@ -38,17 +33,27 @@ def _local_date(info: MailInfo, fallback: date) -> date:
 
 def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
     cfg, report, fc = ctx.cfg, ctx.report, ctx.cfg["followup"]
-    stores = {name: WorkbookStore(name, cfg.workbook_path(name), cfg).load() for name in fc["workbooks"]}
+    names = [n for n in cfg["workbooks"] if n in fc["workbooks"] or cfg.lead_tabs(n)]
+    stores = {}
+    for name in names:
+        try:
+            stores[name] = WorkbookStore(name, cfg.workbook_path(name), cfg).load()
+        except FileNotFoundError as exc:
+            if name in fc["workbooks"]:
+                raise
+            report.add("Errors", str(exc))
     open_statuses = {s.strip().lower() for s in fc["open_statuses"]}
-    intro_status = cfg.status("intro_drafted").lower()
+    awaiting_send = {cfg.status("intro_drafted").lower(), cfg.status("rfq_drafted").lower()}
     groups: dict[str, list[Row]] = {}
     for store in stores.values():
         for view in store.views():
             if not view.has("status"):
                 continue
+            if store.name not in fc["workbooks"] and view.title not in cfg.lead_tabs(store.name):
+                continue
             for row in view.rows():
                 status = row.text("status").lower()
-                if status in open_statuses or status == intro_status:
+                if status in open_statuses or status in awaiting_send:
                     match = EMAIL_RE.search(row.text("email"))
                     key = primary_key(row.text("company"), row.text("website"), match.group(0) if match else "")
                     groups.setdefault(key, []).append(row)
@@ -98,14 +103,14 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             last = to_date(row.get("last_contacted"))
             values: dict = {}
 
-            if status == intro_status:
+            if status in awaiting_send:
                 drafted_on = to_date(row.get("draft_created")) or to_date(row.get("date_added")) or today
                 if not last_sent or _local_date(last_sent, today) < drafted_on:
-                    continue  # intro still waiting in Drafts
+                    continue  # draft still waiting to be sent
                 sent_on = _local_date(last_sent, today)
                 values.update(status=cfg.status("open"), last_contacted=sent_on,
                               next_action_date=sent_on + timedelta(days=days))
-                report.add("Intro sent - now Open", f"{label} (sent {fmt_date(sent_on)})")
+                report.add("Sent - now Open", f"{label} (sent {fmt_date(sent_on)})")
                 last = sent_on
                 status = "open"
             elif last_sent:
@@ -194,7 +199,7 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             try:
                 draft = ctx.agent.structured(
                     system=FOLLOWUP_SYSTEM,
-                    prompt=followup_prompt(record_type=rtype, number=step, row_context=row.context(),
+                    prompt=followup_prompt(record_type=rtype, number=step, row_context=row.email_context(),
                                            original=(last_sent.text[:1500] if last_sent else ""),
                                            days_since=overdue, threaded=threaded, cfg=cfg),
                     schema=EMAIL_SCHEMA, effort=fc["effort"])

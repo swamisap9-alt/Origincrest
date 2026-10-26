@@ -23,7 +23,7 @@ from openpyxl.utils import get_column_letter, range_boundaries
 from openpyxl.worksheet.table import TableColumn
 
 from .dedupe import DedupeIndex
-from .schema import FIELD_BY_KEY, NEW_TAB_KEYS, match_header, match_weak_header
+from .schema import FIELD_BY_KEY, NEW_TAB_KEYS, NOT_FOR_EMAIL, category_kind, match_header, match_weak_header
 from .utils import clean, fmt_date, log
 
 HEADER_FILL = PatternFill("solid", fgColor="DDEBF7")
@@ -105,6 +105,11 @@ class Row:
     def context(self) -> dict[str, str]:
         return self.sheet.row_context(self.index)
 
+    def email_context(self, skip: tuple[str, ...] = ()) -> dict[str, str]:
+        """The row as the email writer sees it: your columns, without the agent's bookkeeping."""
+        cols = {self.sheet.columns[k] for k in (*NOT_FOR_EMAIL, *skip) if k in self.sheet.columns}
+        return self.sheet.row_context(self.index, skip_cols=cols)
+
     def all_text(self) -> str:
         return " ".join(self.context().values())
 
@@ -114,6 +119,14 @@ class Row:
 
     @property
     def kind(self) -> str:
+        """'buyer' (gets intro emails, 10-day follow-ups) or 'freight' (gets RFQs, 5-day follow-ups)."""
+        record_type = self.text("record_type").lower()
+        if record_type.startswith("lead"):
+            return "buyer"
+        if record_type.startswith(("quote", "rfq")):
+            return "freight"
+        if category := self.text("category"):
+            return category_kind(category)
         return self.sheet.kind
 
 
@@ -232,9 +245,11 @@ class SheetView:
                 self.set(r, key, value)
         return Row(self, r)
 
-    def row_context(self, r: int) -> dict[str, str]:
+    def row_context(self, r: int, skip_cols: set[int] | None = None) -> dict[str, str]:
         out: dict[str, str] = {}
         for c, header in self.headers.items():
+            if skip_cols and c in skip_cols:
+                continue
             value = _value(self.ws, r, c)
             if isinstance(value, (date, datetime)):
                 text = fmt_date(value if isinstance(value, date) else value.date())
@@ -300,16 +315,12 @@ class WorkbookStore:
         return self
 
     def kind_of(self, title: str) -> str:
-        tabs = self.cfg["tabs"]
-        roaster_tabs = {tabs["roasters_australia"], tabs["roasters_adelaide"], *tabs["extra_roaster_tabs"]}
-        freight_tabs = {tabs["freight_australia"], tabs["freight_adelaide"]}
-        if title in roaster_tabs:
-            return "roaster"
-        if title in freight_tabs:
+        if title in self.cfg.lead_tabs(self.name):
+            return self.default_kind
+        if category_kind(title) == "freight":
             return "freight"
-        lowered = title.lower()
-        if any(word in lowered for word in ("roaster", "buyer", "cafe", "café")):
-            return "roaster"
+        if any(word in title.lower() for word in ("roaster", "buyer", "cafe", "café", "importer", "wholesal", "trader")):
+            return "buyer"
         return self.default_kind
 
     def view(self, title: str) -> SheetView | None:

@@ -57,8 +57,11 @@ def core_name(name: str) -> str:
 
 
 def loose_name(name: str) -> str:
-    key = " ".join(t for t in name_tokens(name) if t not in _LEGAL_WORDS and t not in _GENERIC_WORDS)
-    return key if len(key.replace(" ", "")) >= 5 else ""
+    tokens = [t for t in name_tokens(name) if t not in _LEGAL_WORDS and t not in _GENERIC_WORDS]
+    # One short leftover word ("hills", "bean") says too little: "Hills Roasting Co" isn't "Hills Cafe Group".
+    if len(tokens) >= 2 and len("".join(tokens)) >= 5 or len(tokens) == 1 and len(tokens[0]) >= 8:
+        return " ".join(tokens)
+    return ""
 
 
 def host_of(url: str) -> str:
@@ -159,36 +162,51 @@ def primary_key(company: str = "", website: str = "", email: str = "") -> str:
 
 
 class DedupeIndex:
+    """Known companies. A website, email or phone match is a duplicate; a name match is a duplicate
+    unless both companies have websites and they differ (two "Bean Bar"s in different cities)."""
+
     def __init__(self) -> None:
-        self._keys: dict[str, str] = {}
-        self._names: list[tuple[str, str]] = []
+        self._keys: dict[str, int] = {}
+        self._entities: list[tuple[str, set[str]]] = []  # (label, domain keys)
+        self._names: list[tuple[str, int]] = []
 
     def __len__(self) -> int:
-        return len(self._names)
+        return len(self._entities)
+
+    def _register(self, label: str, keys: set[str]) -> None:
+        eid = len(self._entities)
+        self._entities.append((label, {k for k in keys if k.startswith("domain:")}))
+        for key in keys:
+            self._keys.setdefault(key, eid)
+            if key.startswith("name:"):
+                self._names.append((key[5:], eid))
 
     def add(self, label: str, company: str = "", website: str = "", email: str = "", phone: str = "",
             extra_text: str = "") -> None:
-        for key in entity_keys(company, website, email, phone, extra_text):
-            self._keys.setdefault(key, label)
-        core = core_name(company)
-        if core:
-            self._names.append((core, label))
+        self._register(label, entity_keys(company, website, email, phone, extra_text))
 
     def add_keys(self, label: str, keys: set[str] | list[str]) -> None:
-        for key in keys:
-            self._keys.setdefault(key, label)
-            if key.startswith("name:"):
-                self._names.append((key[5:], label))
+        self._register(label, set(keys))
 
     def match(self, company: str = "", website: str = "", email: str = "", phone: str = "") -> str | None:
-        for key in entity_keys(company, website, email, phone):
-            if key in self._keys:
-                return self._keys[key]
+        keys = entity_keys(company, website, email, phone)
+        domains = {k for k in keys if k.startswith("domain:")}
+
+        def compatible(eid: int) -> bool:
+            other = self._entities[eid][1]
+            return not (domains and other and domains.isdisjoint(other))
+
+        name_keys = [k for k in keys if k.startswith(("name:", "loose:"))]
+        for key in [k for k in keys if k not in name_keys] + name_keys:
+            eid = self._keys.get(key)
+            if eid is not None and (key not in name_keys or compatible(eid)):
+                return self._entities[eid][0]
         core = core_name(company)
         if len(core) >= 8:
-            for other, label in self._names:
-                if len(other) >= 8 and difflib.SequenceMatcher(None, core, other).ratio() >= 0.92:
-                    return label
+            for other, eid in self._names:
+                if (len(other) >= 8 and compatible(eid)
+                        and difflib.SequenceMatcher(None, core, other).ratio() >= 0.92):
+                    return self._entities[eid][0]
         return None
 
     def known_names(self, limit: int = 300) -> list[str]:

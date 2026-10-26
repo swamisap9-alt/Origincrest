@@ -46,11 +46,18 @@ def make_rfq_workbook(path: Path) -> None:
 def make_master_workbook(path: Path) -> None:
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "3PL Master"
-    for c, h in enumerate(["Company", "Website", "Email", "State"], start=1):
+    ws.title = "All contacts"
+    for c, h in enumerate(["Company", "Business Type", "Website", "Email", "State"], start=1):
         ws.cell(1, c, h)
-    ws.append(["Port Adelaide Freight Pty Ltd", "https://www.paf.com.au", "", "SA"])
-    ws.append(["Bean There Roasters", "beanthere.com.au", "info@beanthere.com.au", "VIC"])
+    ws.append(["Port Adelaide Freight Pty Ltd", "3PL", "https://www.paf.com.au", "", "SA"])
+    ws.append(["Bean There Roasters", "Roasters", "beanthere.com.au", "info@beanthere.com.au", "VIC"])
+    ws.append(["Pacific Green Imports", "Importers", "pacificgreen.com.au", "", "NSW"])
+    ws.append(["Bulk Bean Traders", "Wholesalers & Traders", "", "", "QLD"])
+    prospects = wb.create_sheet("New Prospects Oct-26")
+    for c, h in enumerate(["Company", "Category", "State"], start=1):
+        prospects.cell(1, c, h)
+    prospects.append(["Hills Cafe Group", "Cafe groups", "SA"])
+    prospects.append(["Bean There Roasters", "Roasters", "VIC"])
     wb.save(path)
 
 

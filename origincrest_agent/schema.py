@@ -35,7 +35,9 @@ FIELDS: list[Field] = [
     ), width=30, weak_synonyms=("name",)),
     Field("category", "Category", (
         "category", "type", "business type", "service type", "segment", "company type", "provider type",
-    ), width=20),
+        "business category", "category type", "sector", "industry", "prospect type", "contact type",
+        "classification", "categories",
+    ), width=24),
     Field("contact_name", "Contact name", (
         "contact name", "contact person", "key contact", "primary contact", "person", "attention", "attn",
         "poc", "contact first name", "full name",
@@ -61,6 +63,10 @@ FIELDS: list[Field] = [
     Field("services", "Services / offering", (
         "services", "service", "services offering", "services offered", "offering", "capabilities",
         "specialty", "speciality", "what they do", "description", "coffee handling",
+    ), width=40),
+    Field("talking_points", "Talking points", (
+        "talking points", "email notes", "notes for email", "message notes", "pitch notes", "personal note",
+        "email brief",
     ), width=40),
     Field("source_url", "Source URL", (
         "source url", "source", "source link", "found at", "reference url", "where found", "source website",
@@ -93,9 +99,9 @@ FIELDS: list[Field] = [
         "number of follow ups",
     ), width=10),
     Field("agent_notes", "Agent notes", ("agent notes", "automation notes", "agent note"), width=48),
-    # Lead research (roaster tabs only).
-    Field("roast_profile", "What they roast", (
-        "what they roast", "roast profile", "coffee offering", "coffee range",
+    # Lead research (coffee-business rows only).
+    Field("roast_profile", "Coffee offering", (
+        "coffee offering", "what they roast", "what they roast sell", "roast profile", "coffee range",
     ), width=40),
     Field("size", "Size estimate", ("size estimate", "size", "company size", "scale"), width=16),
     Field("sourcing", "Sourcing", ("sourcing", "sourcing approach", "green sourcing"), width=34),
@@ -106,10 +112,10 @@ FIELDS: list[Field] = [
     Field("fit_origins", "Best-fit origins", ("best fit origins", "target origins"), width=20),
     Field("fit_rationale", "Fit rationale", ("fit rationale", "fit notes", "why fit"), width=48),
     Field("researched_on", "Researched on", ("researched on", "research date"), width=12, is_date=True),
-    Field("draft_created", "Intro draft created", (
-        "intro draft created", "draft created", "draft date",
+    Field("draft_created", "Draft created", (
+        "draft created", "intro draft created", "draft date",
     ), width=12, is_date=True),
-    Field("draft_subject", "Intro draft subject", ("intro draft subject", "draft subject"), width=34),
+    Field("draft_subject", "Draft subject", ("draft subject", "intro draft subject"), width=34),
 ]
 
 FIELD_BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}
@@ -125,13 +131,28 @@ LEAD_KEYS = [
     "researched_on", "draft_created", "draft_subject",
 ]
 
-# Header layout for tabs the agent creates.
+# Header layout for tabs the agent creates ("Talking points" is yours: notes the emails should build on).
+# "buyer" = coffee businesses (roasters, importers, wholesalers, traders...); "freight" = logistics.
+_NEW_TAB_BASE = DISCOVERY_KEYS[:10] + ["talking_points"] + DISCOVERY_KEYS[10:-1]
 NEW_TAB_KEYS = {
-    "roaster": DISCOVERY_KEYS[:-1] + ["last_contacted", "next_action_date", "last_reply", "followup_count"]
+    "buyer": _NEW_TAB_BASE + ["last_contacted", "next_action_date", "last_reply", "followup_count"]
     + LEAD_KEYS + ["agent_notes"],
-    "freight": DISCOVERY_KEYS[:-1] + ["last_contacted", "next_action_date", "last_reply", "followup_count",
-                                      "agent_notes"],
+    "freight": _NEW_TAB_BASE + ["last_contacted", "next_action_date", "last_reply", "followup_count",
+                                "draft_created", "draft_subject", "agent_notes"],
 }
+
+_FREIGHT_WORDS = re.compile(
+    r"freight|forward|3pl|logistic|warehous|customs|broker|shipping|transport|fumigat|courier|carrier|"
+    r"storage|cold chain|devan|container|fulfil", re.I)
+
+
+def category_kind(category: str) -> str:
+    """'freight' for logistics categories (they get RFQs), 'buyer' for everything else (intro emails)."""
+    return "freight" if _FREIGHT_WORDS.search(category or "") else "buyer"
+
+# Agent bookkeeping columns that aren't useful to whoever writes the email.
+NOT_FOR_EMAIL = ["status", "source_url", "date_added", "added_by", "record_type", "agent_notes", "researched_on",
+                 "draft_created", "draft_subject", "followup_count", "fit_score"]
 
 _STRONG: dict[str, str] = {}
 _WEAK: dict[str, str] = {}

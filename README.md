@@ -6,9 +6,16 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 
 | # | Workflow | When | What it does |
 |---|----------|------|--------------|
-| 1 | `discover` | Weekly (Mon 6:30) | Searches the web for Australian specialty roasters and for forwarders / customs brokers / 3PLs that handle green and roasted coffee. Skips anything already in either workbook, then adds new rows with status **New - to review**: Adelaide/SA businesses go on their own tab. |
-| 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Finds new roaster rows, researches each one (what they roast, size, sourcing, location, current Indonesian coffees), scores fit 0-100 for Sumatra / Sulawesi / Java / Flores, and saves a personalised intro email as a draft. |
-| 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook, finds **Open** rows with no reply after 5 days (quotes) or 10 days (leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Next action date**. |
+| 1 | `discover` | Weekly (Mon 6:30) | Finds new leads on the web, separately for each workbook (below). Skips anything already in that workbook, then adds new rows with status **New - to review** to two tabs: one for Adelaide / SA, one for all other states. |
+| 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Turns each new lead into a draft written from its own row. Freight forwarders, customs brokers and 3PLs get a tailored **RFQ**. Coffee businesses are researched first (what they sell, size, sourcing, current Indonesian coffees, fit 0-100 for Sumatra / Sulawesi / Java / Flores), then get a personalised **intro email**. |
+| 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook and every new-lead tab, finds **Open** rows with no reply after 5 days (quotes) or 10 days (leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Next action date**. |
+
+| Workbook | New leads it gets | Tabs | Email |
+|----------|-------------------|------|-------|
+| `OriginCrest_Freight_3PL_Contacts_RFQ.xlsx` | Freight forwarders, customs brokers and 3PLs that handle green or roasted coffee | `New Freight-3PL - Adelaide`, `New Freight-3PL - Other States` | RFQ |
+| `Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx` | Every category in the **New Prospects Oct-26** tab, plus the importer / roaster / wholesaler / trader categories in **All contacts** (read from their Category column each run) | `New Leads - Adelaide`, `New Leads - Other States` | Intro (RFQ for any logistics category) |
+
+`scripts\run.cmd check` lists the categories it found in your tabs, with an example company for each.
 
 The spreadsheets stay where they are, so your existing OneDrive → Google Drive backup keeps working.
 
@@ -16,26 +23,29 @@ The spreadsheets stay where they are, so your existing OneDrive → Google Drive
 
 - **Drafts only.** Emails are saved to your Drafts folder. Nothing goes out until you press Send.
 - **Discovery rows are quarantined.** New rows get status `New - to review`, `Added by = OriginCrest Agent`
-  and a `Source URL`, on their own tabs (`Roasters - Adelaide`, `Roasters - Australia`,
-  `Freight-3PL - Adelaide`, `Freight-3PL - Australia`), in both workbooks.
+  and a `Source URL`, on their own "New ..." tabs. Only rows in those tabs are ever drafted to: your
+  existing tabs (`All contacts`, `New Prospects Oct-26`, your RFQ tracker) are read for categories,
+  duplicates and RFQ examples, never emailed.
 - **Only publicly listed business contacts.** Claude is told never to guess or build email addresses.
   The agent then loads the source page (and the company's contact page) and **keeps an email, phone or
   contact name only if it actually appears there**. If the page says "no unsolicited email", the email
   is left blank. Anything dropped is explained in `Agent notes`.
-- **Spam Act 2003.** Every lead email gets a footer, added by code rather than by the model, with your name,
-  business, address/phone and an unsubscribe instruction ("reply 'unsubscribe'"), plus a
-  `List-Unsubscribe` header. Unsubscribe replies are detected on the next weekday run, the row is set to
+- **Spam Act 2003.** Every email gets your signature (name, business, address/phone) plus an opt-out, added
+  by code rather than by the model: intro emails get the full unsubscribe footer, RFQs a one-line "reply
+  'unsubscribe' and we won't contact you again". Both carry a `List-Unsubscribe` header. Unsubscribe replies are detected on the next weekday run, the row is set to
   `Unsubscribed - do not contact`, and the address goes on a suppression list that every workflow checks.
   The agent won't draft anything until your sender details in `config.yaml` are filled in.
-- **Caps per run:** 30 new rows (10 per search segment), 10 companies researched, 8 intro drafts,
-  15 follow-up drafts, max 3 follow-ups per contact. All adjustable.
+- **Caps per run:** 20 new rows per workbook (6 per category and region), 4 categories per week (rotating),
+  10 companies researched, 8 drafts, 15 follow-up drafts, max 3 follow-ups per contact. All adjustable.
 - **Your data is safe:** a timestamped backup of each workbook is made before every save, nothing is written
   while a workbook is open in Excel, and your own columns (e.g. `Notes`) are never overwritten. The agent
   writes its comments to its own `Agent notes` column.
-- **Leaves your contacts alone:** workflow 2 only touches rows whose status is blank, `New`, `New - to review`,
-  `Reviewed`, `Approved`, `To contact`, `Lead` or `Prospect`. Rows like `Customer` or `In discussion`
-  are never emailed. Before drafting an intro it also checks your Sent folder: if you've already emailed
-  them, the row is set to `Open` instead.
+- **Leaves your contacts alone:** within the new-lead tabs, workflow 2 only touches rows whose status is blank,
+  `New`, `New - to review`, `Reviewed`, `Approved`, `To contact`, `Lead` or `Prospect`. Before drafting it
+  also checks your Sent folder: if you've already emailed them, the row is set to `Open` instead.
+- **No invented facts.** Emails use only the contact's row, the research on them and the OriginCrest details
+  you allow. RFQ shipment details come from `rfq.requirements`, your RFQ tracker rows and the last RFQ you
+  sent; anything still unknown is left as a `[placeholder]` to fill in, and the row's notes say so.
 
 > Not legal advice: the Spam Act lets you email a business address that is conspicuously published,
 > if the message relates to their business and the page doesn't say they don't want it. The Act also
@@ -47,8 +57,9 @@ The spreadsheets stay where they are, so your existing OneDrive → Google Drive
 
 ```
 discover ─► New - to review ─► (leads) ─┬─► Intro drafted - to review ─(you send it)─► Open
+                                        ├─► RFQ drafted - to review ───(you send it)─► Open
                                         ├─► Researched - low fit        (set Approved to draft anyway)
-                                        └─► Researched - no public email
+                                        └─► No public email
 
 Open ─(followup, no reply after 5/10 days)─► follow-up draft, Last contacted = today, Next action date = +5/+10
 Open ─(reply found)──────────────────────► Replied - review      (Last reply, Next action date = today)
@@ -61,8 +72,11 @@ Open ─(bounce)─────────────────────�
 - `Approved` also overrides a low fit score.
 - RFQs you send yourself: set the row to `Open` with a `Last contacted` date (or just send from this mailbox:
   the agent picks the date up from your Sent folder) and it will be chased after 5 days.
-- Quote vs lead: taken from a `Record type` column if you have one, otherwise roaster tabs are leads and
-  everything else in the RFQ workbook is a quote.
+- Quote vs lead: taken from the `Record type` column (the agent fills it in for new leads), otherwise from the
+  Category (logistics words like freight / 3PL / customs mean quote), otherwise from the workbook: RFQ workbook
+  rows are quotes, master workbook rows are leads.
+- **Talking points:** the new-lead tabs have a `Talking points` column. Anything you write there (how you met,
+  what to mention) is built into that contact's email.
 
 ## Columns
 
@@ -72,8 +86,8 @@ styled like your existing headers, and Excel tables and filters are stretched to
 
 | Workflow | Columns it may add |
 |----------|--------------------|
-| 1 | Company, Category, Contact name, Role, Email, Phone, Website, City, State, Services / offering, Source URL, Status, Date added, Added by, Record type, Agent notes |
-| 2 (roaster tabs) | What they roast, Size estimate, Sourcing, Current Indonesian coffees, Fit score (0-100), Best-fit origins, Fit rationale, Researched on, Intro draft created, Intro draft subject |
+| 1 | Company, Category, Contact name, Role, Email, Phone, Website, City, State, Services / offering, Talking points, Source URL, Status, Date added, Added by, Record type, Agent notes |
+| 2 | Draft created, Draft subject; for coffee businesses also Coffee offering, Size estimate, Sourcing, Current Indonesian coffees, Fit score (0-100), Best-fit origins, Fit rationale, Researched on |
 | 3 | Last contacted, Next action date, Last reply, Follow-ups drafted, Agent notes |
 
 ## Setup (Windows, about 20 minutes)
@@ -95,21 +109,24 @@ styled like your existing headers, and Excel tables and filters are stretched to
      `starttls`), and `username` (usually the full email address).
    - `sender`: name, business address (or phone), sending email, ABN if you want it shown. These go in the
      signature and the Spam Act footer. `sender.email` should be the mailbox above or an alias of it.
-   - `offer`: what the emails may say about OriginCrest (summary, your Sumatra/Sulawesi/Java/Flores lots,
-     facts such as sample sizes or where stock is held). The agent states nothing beyond this.
+   - `rfq.requirements` (optional): what you need quoted, e.g. lanes, container size, volumes, services. Leave
+     it blank and the agent works it out from your RFQ tracker and last RFQ email.
+   - `offer` (optional): extra facts about OriginCrest the emails may use, such as sample sizes or where stock
+     is held. Left blank, emails describe OriginCrest as a supplier of Indonesian single-origin green coffee.
    - The workbook paths are already set to your two files.
 7. **Check everything**:
    ```powershell
    scripts\run.cmd check --api
    ```
-   This lists every tab, the header row it found and how each column was matched. It also logs in to your
+   This lists every tab, the header row it found and how each column was matched, and the categories it will
+   search for each workbook, with an example company from your sheet. It also logs in to your
    mailbox and shows which folders it will use for Drafts, Sent and replies, plus every folder on the server.
    Fix anything marked `[X]` or `[!]`.
 8. **First run by hand**, with Excel closed:
    ```powershell
-   scripts\run.cmd init-sheets          # creates the 4 discovery tabs in both workbooks
-   scripts\run.cmd discover --dry-run   # searches and reports, writes nothing
-   scripts\run.cmd discover             # real run, then researches + drafts intros
+   scripts\run.cmd discover --workbook rfq --region adelaide --max-rows 3 --dry-run   # writes nothing
+   scripts\run.cmd discover --workbook rfq --region adelaide --max-rows 3            # 3 rows + RFQ drafts
+   scripts\run.cmd discover --workbook master --categories Roasters --max-rows 3    # 3 rows + intros
    scripts\run.cmd followup --dry-run   # previews follow-ups as .eml files
    ```
 9. **Schedule it**:
@@ -148,9 +165,10 @@ styled like your existing headers, and Excel tables and filters are stretched to
   (`%LOCALAPPDATA%\OriginCrestAgent\state.db`), so re-runs never draft the same email twice. A follow-up isn't
   drafted while an earlier draft to the same address is still waiting unsent in Drafts.
 - **Deleted a junk discovery row?** It won't be re-added: the agent remembers what it found before.
-- **Same company in both workbooks** is researched once and drafted once; both rows are updated.
-- **Workflow 3 reads only the RFQ workbook**, as requested. Add `master` to `followup.workbooks` if you want
-  its Open rows chased too (one follow-up per company either way).
+- **Same company in both workbooks** is drafted to only once.
+- **Workflow 3** reads every tab of the RFQ workbook, plus the new-lead tabs of the master workbook so the
+  leads the agent found there get followed up. Add `master` to `followup.workbooks` if you want every Open row
+  in the master workbook chased too.
 - **Excel features:** the workbooks are edited with `openpyxl`. Data, formatting, formulas, tables, filters and
   simple dropdowns are kept. Some features may not survive a save: dropdowns whose list comes from another
   sheet, slicers, form controls, shapes and external links. `check` warns you if a workbook uses any of them,
@@ -165,15 +183,15 @@ styled like your existing headers, and Excel tables and filters are stretched to
 ```
 scripts\run.cmd check [--api]
 scripts\run.cmd init-sheets [--dry-run]
-scripts\run.cmd discover [--dry-run] [--max-rows N] [--segments roasters_adelaide,freight_adelaide] [--no-leads]
+scripts\run.cmd discover [--dry-run] [--workbook rfq|master] [--categories "Roasters,Importers"] [--region adelaide|other] [--max-rows N] [--no-leads]
 scripts\run.cmd leads [--dry-run] [--max-drafts N]
 scripts\run.cmd followup [--dry-run] [--max-drafts N]
 scripts\run.cmd flush        # write rows still queued from a run when Excel was open
 ```
 
-Discovery segments: `roasters_adelaide`, `roasters_australia`, `freight_adelaide`, `freight_australia`. Each
-week focuses on a different set of areas (e.g. Adelaide Hills, Barossa, Port Adelaide 3PLs, Melbourne,
-Brisbane), so the weekly searches keep turning up new businesses.
+Each search is one category in one region (Adelaide/SA or other states). Each week focuses on different areas
+(e.g. Adelaide Hills, Barossa, Melbourne, Brisbane) or, for freight, different services (Port Adelaide
+forwarders, customs brokers, food-grade 3PLs), so the weekly searches keep turning up new businesses.
 
 ## Development
 

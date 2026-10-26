@@ -58,6 +58,21 @@ def cmd_check(cfg, args) -> int:
             rows = sum(1 for _ in view.rows())
             print(f"     tab '{view.title}' [{view.kind}] header row {view.header_row}, {rows} rows")
             print(f"        columns: {mapped or '(none recognised)'}")
+        if profile := cfg.profile(name):
+            from .discovery import profile_categories
+
+            notes: list[str] = []
+            cats = profile_categories(cfg, store, notes)
+            print(f"     new leads go to: '{profile['adelaide_tab']}' (Adelaide/SA) and '{profile['other_tab']}' "
+                  "(other states)")
+            for note in notes:
+                print(f"     [!] {note}")
+            print(f"     search categories ({len(cats)}):")
+            for cat in cats:
+                email = "RFQ email" if cat.kind == "freight" else "intro email"
+                where = f" - e.g. {', '.join(cat.examples[:3])}" if cat.examples else ""
+                print(f"        - {cat.label}  [{email}; from {cat.source}]{where}")
+            ok &= bool(cats)
     from .compliance import sender_problems
 
     if problems := sender_problems(cfg):
@@ -95,12 +110,12 @@ def cmd_init_sheets(cfg, args) -> int:
     from .workbook import WorkbookStore
 
     ctx = _context(cfg, "init-sheets", args.dry_run)
-    tabs = cfg["tabs"]
-    for name in cfg["discovery"]["workbooks"]:
+    for name, profile in cfg["discovery"]["profiles"].items():
+        if name not in cfg["workbooks"]:
+            continue
         store = WorkbookStore(name, cfg.workbook_path(name), cfg).load()
-        for key, kind in (("roasters_australia", "roaster"), ("roasters_adelaide", "roaster"),
-                          ("freight_australia", "freight"), ("freight_adelaide", "freight")):
-            store.get_or_create(tabs[key], kind)
+        for tab in (profile["adelaide_tab"], profile["other_tab"]):
+            store.get_or_create(tab, store.default_kind)
         if args.dry_run:
             print(f"{store.path.name}: would create missing tabs")
             continue
@@ -120,8 +135,9 @@ def run_workflow(cfg, args) -> int:
     try:
         with AgentLock(cfg.data_dir / "agent.lock"):
             if args.command == "discover":
-                segments = args.segments.split(",") if args.segments else None
-                run_discover(ctx, segments=segments, max_rows=args.max_rows)
+                split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
+                run_discover(ctx, workbooks=split(args.workbook), categories=split(args.categories),
+                             regions=split(args.region), max_rows=args.max_rows)
                 if cfg["discovery"]["run_leads_after"] and not args.no_leads:
                     run_leads(ctx)
             elif args.command == "leads":
@@ -152,14 +168,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("check", help="check config, workbooks, IMAP login and API key")
     p.add_argument("--api", action="store_true", help="also make a tiny Claude API call")
-    p = sub.add_parser("init-sheets", help="create the discovery tabs in both workbooks")
+    p = sub.add_parser("init-sheets", help="create the new-lead tabs (Adelaide / other states) in each workbook")
     p.add_argument("--dry-run", action="store_true")
-    p = sub.add_parser("discover", help="workflow 1: find new roasters and forwarders/3PLs")
+    p = sub.add_parser("discover", help="workflow 1: find new leads for each workbook")
     p.add_argument("--dry-run", action="store_true", help="search and report, but write nothing")
-    p.add_argument("--max-rows", type=int, help="override the per-run cap on new rows")
-    p.add_argument("--segments", help="comma list, e.g. roasters_adelaide,freight_adelaide")
+    p.add_argument("--workbook", help="only this workbook, e.g. rfq or master")
+    p.add_argument("--categories", help="only these categories (comma list, as shown by check)")
+    p.add_argument("--region", choices=["adelaide", "other"], help="only Adelaide/SA or only the other states")
+    p.add_argument("--max-rows", type=int, help="cap on new rows per workbook for this run")
     p.add_argument("--no-leads", action="store_true", help="don't run workflow 2 afterwards")
-    p = sub.add_parser("leads", help="workflow 2: research new roaster rows and draft intros")
+    p = sub.add_parser("leads", help="workflow 2: research new leads and draft intro / RFQ emails")
     p.add_argument("--dry-run", action="store_true", help="research and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)
     p = sub.add_parser("followup", help="workflow 3: check replies and draft follow-ups")

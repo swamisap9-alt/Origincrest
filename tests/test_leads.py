@@ -9,22 +9,25 @@ from origincrest_agent.workbook import WorkbookStore
 from .conftest import TODAY, mail, utc
 
 
-def seed_roasters(cfg, names=("rfq", "master")):
+LEADS_ADELAIDE = "New Leads - Adelaide"
+
+
+def seed_buyers(cfg):
     rows = [
-        {"company": "Hills Roasting Co", "email": "info@hillsroasting.com.au", "website": "https://hillsroasting.com.au",
-         "status": "New - to review", "source_url": "https://hillsroasting.com.au/contact",
-         "added_by": "OriginCrest Agent"},
-        {"company": "Low Fit Cafe", "email": "hi@lowfit.com.au", "status": "New - to review",
-         "added_by": "OriginCrest Agent"},
-        {"company": "No Email Roasters", "website": "https://noemail.com.au", "status": ""},
-        {"company": "Existing Customer Roasters", "email": "buy@customer.com.au", "status": "Customer"},
+        {"company": "Hills Roasting Co", "category": "Roasters", "email": "info@hillsroasting.com.au",
+         "website": "https://hillsroasting.com.au", "status": "New - to review",
+         "source_url": "https://hillsroasting.com.au/contact", "added_by": "OriginCrest Agent", "record_type": "Lead"},
+        {"company": "Low Fit Cafe", "category": "Cafe groups", "email": "hi@lowfit.com.au", "status": "New - to review",
+         "added_by": "OriginCrest Agent", "record_type": "Lead"},
+        {"company": "No Email Roasters", "category": "Roasters", "website": "https://noemail.com.au", "status": ""},
+        {"company": "Existing Customer Roasters", "category": "Roasters", "email": "buy@customer.com.au",
+         "status": "Customer"},
     ]
-    for name in names:
-        store = WorkbookStore(name, cfg.workbook_path(name), cfg).load()
-        view = store.get_or_create("Roasters - Adelaide", "roaster")
-        for r in rows:
-            view.append(r)
-        store.save(cfg.data_dir / "backups")
+    store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
+    view = store.get_or_create(LEADS_ADELAIDE, "buyer")
+    for r in rows:
+        view.append(r)
+    store.save(cfg.data_dir / "backups")
 
 
 def research(name, score, email="", **kw):
@@ -40,20 +43,21 @@ def research(name, score, email="", **kw):
     return ResearchResult(data=data)
 
 
-def sheet(cfg, name="rfq", tab="Roasters - Adelaide"):
+def sheet(cfg, name="master", tab=LEADS_ADELAIDE):
     ws = openpyxl.load_workbook(cfg.workbook_path(name))[tab]
     headers = [c.value for c in ws[1]]
     return {r[0].value: dict(zip(headers, (c.value for c in r))) for r in ws.iter_rows(min_row=2)}
 
 
-def test_research_score_and_draft(cfg, agent, mailbox, make_ctx):
-    seed_roasters(cfg)
-    # Order: user-entered rows first, then agent rows.
+def test_research_score_and_intro(cfg, agent, mailbox, make_ctx):
+    seed_buyers(cfg)
+    # Order: rows you added yourself first, then the agent's finds.
     agent.research_queue = [research("No Email Roasters", 70), research("Hills Roasting Co", 82),
                             research("Low Fit Cafe", 30)]
     ctx = make_ctx("leads")
     assert run_leads(ctx) == 1
-    assert len([c for c in agent.calls if c[0] == "research"]) == 3  # once per company, not per workbook
+    # Only the new-lead tab is worked on: nothing in "All contacts" / "New Prospects Oct-26" is researched.
+    assert len([c for c in agent.calls if c[0] == "research"]) == 3
 
     assert len(mailbox.drafts) == 1
     msg = mailbox.drafts[0]
@@ -63,17 +67,17 @@ def test_research_score_and_draft(cfg, agent, mailbox, make_ctx):
     assert "Swami K" in body and "1 Test St" in body
     assert "unsubscribe" in body and "hillsroasting.com.au" in body
 
-    for name in ("rfq", "master"):
-        rows = sheet(cfg, name)
-        hills = rows["Hills Roasting Co"]
-        assert hills["Status"] == "Intro drafted - to review"
-        assert hills["Fit score (0-100)"] == 82
-        assert hills["Best-fit origins"] == "Sumatra, Flores"
-        assert hills["Intro draft subject"] == "Indonesian green for your range"
-        assert rows["Low Fit Cafe"]["Status"] == "Researched - low fit"
-        assert rows["No Email Roasters"]["Status"] == "Researched - no public email"
-        assert rows["Existing Customer Roasters"]["Status"] == "Customer"
-        assert rows["Existing Customer Roasters"]["Fit score (0-100)"] is None
+    rows = sheet(cfg)
+    hills = rows["Hills Roasting Co"]
+    assert hills["Status"] == "Intro drafted - to review"
+    assert hills["Fit score (0-100)"] == 82
+    assert hills["Best-fit origins"] == "Sumatra, Flores"
+    assert hills["Coffee offering"] == "Light-roast single origins, filter focus"
+    assert hills["Draft subject"] == "Indonesian green for your range"
+    assert rows["Low Fit Cafe"]["Status"] == "Researched - low fit"
+    assert rows["No Email Roasters"]["Status"] == "No public email"
+    assert rows["Existing Customer Roasters"]["Status"] == "Customer"
+    assert rows["Existing Customer Roasters"]["Fit score (0-100)"] is None
 
     # Nothing left to do on a second run: no new API calls, no new drafts.
     calls = len(agent.calls)
@@ -81,11 +85,43 @@ def test_research_score_and_draft(cfg, agent, mailbox, make_ctx):
     assert len(agent.calls) == calls and len(mailbox.drafts) == 1
 
 
-def test_approved_status_overrides_low_score(cfg, agent, mailbox, make_ctx):
-    seed_roasters(cfg, names=("rfq",))
-    cfg.data["leads"]["workbooks"] = ["rfq"]
+def test_rfq_drafted_for_new_freight_lead(cfg, agent, mailbox, make_ctx):
     store = WorkbookStore("rfq", cfg.workbook_path("rfq"), cfg).load()
-    view = store.view("Roasters - Adelaide")
+    store.get_or_create("New Freight-3PL - Adelaide", "freight").append({
+        "company": "Indo Freight Lines", "category": "Freight forwarder", "email": "rfq@indofreight.com.au",
+        "city": "Port Adelaide", "state": "SA", "services": "Green coffee FCL from Belawan; customs clearance",
+        "status": "New - to review", "record_type": "Quote", "added_by": "OriginCrest Agent"})
+    store.save(cfg.data_dir / "backups")
+    # Your earlier RFQ (to a contact in the RFQ tracker) is used as the reference for what to ask.
+    mailbox.sent.append(mail("Sent", utc(TODAY - timedelta(days=7)), "hello@origincrest.com.au",
+                             "quotes@seaway.com.au", "RFQ: 1x20ft green coffee Belawan to Adelaide",
+                             text="Could you quote 1x20ft FCL, 19.2t green coffee in jute bags, FOB Belawan?"))
+    agent.structured_queue = [{"subject": "RFQ: green coffee FCL Belawan to Port Adelaide",
+                               "body": "Hi team,\n\nPlease quote [number of 20ft containers per year].\n\nKind regards,"}]
+    ctx = make_ctx("leads")
+    assert run_leads(ctx) == 1
+
+    assert not [c for c in agent.calls if c[0] == "research"]  # no fit research for logistics providers
+    prompt = agent.calls[0][1]
+    assert "Green coffee FCL from Belawan" in prompt          # this company's own row
+    assert "FCL Belawan-Adelaide" in prompt                   # what the RFQ tracker shows you ask for
+    assert "19.2t green coffee in jute bags" in prompt        # your last RFQ email
+    assert "quotes@seaway.com.au" not in prompt               # other providers' contact details stay out
+
+    msg = mailbox.drafts[0]
+    assert msg["To"] == "rfq@indofreight.com.au"
+    assert msg["Subject"] == "RFQ: green coffee FCL Belawan to Port Adelaide"
+    assert "requests like this" in msg.get_content()          # short opt-out line, not the marketing footer
+    row = sheet(cfg, "rfq", "New Freight-3PL - Adelaide")["Indo Freight Lines"]
+    assert row["Status"] == "RFQ drafted - to review"
+    assert row["Draft subject"] == "RFQ: green coffee FCL Belawan to Port Adelaide"
+    assert "Fill in the [bracketed] details" in row["Agent notes"]
+
+
+def test_approved_status_overrides_low_score(cfg, agent, mailbox, make_ctx):
+    seed_buyers(cfg)
+    store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
+    view = store.view(LEADS_ADELAIDE)
     for row in view.rows():
         row.set("status", "Approved" if row.text("company") == "Low Fit Cafe" else "Customer")
     store.save(cfg.data_dir / "backups")
@@ -95,8 +131,7 @@ def test_approved_status_overrides_low_score(cfg, agent, mailbox, make_ctx):
 
 
 def test_no_drafts_until_sender_details_filled(cfg, agent, mailbox, make_ctx):
-    seed_roasters(cfg, names=("rfq",))
-    cfg.data["leads"]["workbooks"] = ["rfq"]
+    seed_buyers(cfg)
     cfg.data["sender"]["address"] = "<<EDIT ME: business postal address>>"
     cfg.data["sender"]["phone"] = ""
     agent.research_queue = [research("No Email Roasters", 70), research("Hills Roasting Co", 82),
@@ -109,8 +144,7 @@ def test_no_drafts_until_sender_details_filled(cfg, agent, mailbox, make_ctx):
 
 
 def test_already_emailed_contact_goes_to_open(cfg, agent, mailbox, make_ctx):
-    seed_roasters(cfg, names=("rfq",))
-    cfg.data["leads"]["workbooks"] = ["rfq"]
+    seed_buyers(cfg)
     sent_day = TODAY - timedelta(days=30)
     mailbox.sent.append(mail("Sent", utc(sent_day), "hello@origincrest.com.au", "info@hillsroasting.com.au",
                              "Coffee chat"))
@@ -124,8 +158,7 @@ def test_already_emailed_contact_goes_to_open(cfg, agent, mailbox, make_ctx):
 
 
 def test_draft_cap_defers_rest(cfg, agent, mailbox, make_ctx):
-    seed_roasters(cfg, names=("rfq",))
-    cfg.data["leads"]["workbooks"] = ["rfq"]
+    seed_buyers(cfg)
     agent.research_queue = [research("No Email Roasters", 70, email=""), research("Hills Roasting Co", 82),
                             research("Low Fit Cafe", 90)]
     ctx = make_ctx("leads")
@@ -135,3 +168,31 @@ def test_draft_cap_defers_rest(cfg, agent, mailbox, make_ctx):
     agent.research_queue = []  # research is cached: the deferred row needs no new research
     run_leads(make_ctx("leads"), max_drafts=5)
     assert len(mailbox.drafts) == 2
+
+
+def test_intro_is_written_from_the_contacts_own_row(cfg, agent, mailbox, make_ctx):
+    store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
+    view = store.get_or_create(LEADS_ADELAIDE, "buyer")
+    view.append({"company": "Hills Roasting Co", "email": "info@hillsroasting.com.au", "contact_name": "Mia Chen",
+                 "status": "Reviewed", "talking_points": "Met Mia at the Adelaide coffee expo; she wants a Flores",
+                 "agent_notes": "internal bookkeeping"})
+    store.save(cfg.data_dir / "backups")
+    agent.research_queue = [research("Hills Roasting Co", 80)]
+    run_leads(make_ctx("leads"))
+    prompt = next(p for kind, p in agent.calls if kind == "structured")
+    assert "Met Mia at the Adelaide coffee expo" in prompt
+    assert "Address it to Mia." in prompt
+    assert "internal bookkeeping" not in prompt
+    assert len(mailbox.drafts) == 1
+
+
+def test_offer_section_is_optional(cfg, agent, mailbox, make_ctx):
+    from origincrest_agent.compliance import sender_problems
+    from origincrest_agent.prompts import DEFAULT_SUMMARY, offer_text
+
+    cfg.data["offer"] = {"summary": "<<EDIT ME: e.g. OriginCrest imports...>>",
+                         "origins": ["Sumatra - <<EDIT ME: e.g. Gayo>>", "Flores - <<EDIT ME>>"], "facts": [],
+                         "call_to_action": ""}
+    assert sender_problems(cfg) == []
+    text = offer_text(cfg)
+    assert DEFAULT_SUMMARY in text and "Origins offered: Sumatra; Flores" in text and "<<" not in text
