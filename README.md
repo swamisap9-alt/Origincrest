@@ -162,6 +162,10 @@ kept.
    `-DriveSyncEveryMinutes 30`) and only copies, and only writes a report, when something changed. Once it has
    run, pause the old cloud task so the two don't both upload.
 
+**Edit only the OneDrive copies.** The Google Drive folder is a backup: an edit made there is overwritten the
+next time the OneDrive copy changes. It can still be recovered from Drive's version history (right-click the
+file > File information > Manage versions) for about 30 days.
+
 Skipped: Office lock files (`~$...`), `desktop.ini`, `Thumbs.db`, temp files. Report:
 `%LOCALAPPDATA%\OriginCrestAgent\reports\latest_drive-sync.md`.
 
