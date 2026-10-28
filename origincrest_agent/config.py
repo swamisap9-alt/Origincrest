@@ -192,6 +192,14 @@ DEFAULTS: dict[str, Any] = {
         # Record types whose emails get the Spam Act opt-out line (lead = marketing footer, quote = short line).
         "unsubscribe_footer_for": ["lead", "quote"],
     },
+    # Daily one-way backup of the OneDrive Origincrest folder to Google Drive, via Google Drive for
+    # desktop: files copied into its folder on this PC are uploaded by Google.
+    "drive_sync": {
+        "source": _ORIGINCREST,
+        "destination": r"G:\My Drive\Business\Origincrest files synced from laptop",
+        "skip": ["~$*", "desktop.ini", "Thumbs.db", ".DS_Store", "*.tmp", ".drive-sync-manifest.json"],
+        "max_file_mb": 1024,
+    },
     "excel": {
         "lock_wait_minutes": 5,
         "backup_keep": 40,

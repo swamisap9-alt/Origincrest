@@ -66,6 +66,12 @@ followup:
   max_drafts_per_run: 15
   max_followups_per_contact: 3
 
+# Daily Google Drive backup (scripts\run.cmd drive-sync): copies new or changed files from the OneDrive
+# Origincrest folder into Google Drive for desktop's folder on this PC; Google uploads them. Never deletes.
+drive_sync:
+  source: 'C:\Users\swami\OneDrive\Documents\Origincrest'
+  destination: 'G:\My Drive\Business\Origincrest files synced from laptop'   # as shown in File Explorer
+
 # Your mail server's IMAP settings - the same ones your phone or Outlook uses for this mailbox
 # (your email host's "manual setup" page lists them). The password goes in .env.
 email:

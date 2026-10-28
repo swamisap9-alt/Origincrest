@@ -1,6 +1,6 @@
 # OriginCrest outreach agent
 
-One agent with three workflows. It runs on your Windows PC, reads and writes the two
+One agent with three workflows, plus a daily Google Drive backup. It runs on your Windows PC, reads and writes the two
 OneDrive workbooks directly, uses Claude (with web search) for research and writing, and
 saves every email as an **IMAP draft** for you to review. It never sends email.
 
@@ -9,6 +9,7 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 | 1 | `discover` | Weekly (Mon 6:30) | Finds new leads on the web, separately for each workbook (below). Skips anything already in that workbook, then adds new rows with status **New - to review** to two tabs: one for Adelaide / SA, one for all other states. |
 | 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Turns each new lead into a draft written from its own row. Freight forwarders, customs brokers and 3PLs get a tailored **RFQ**. Coffee businesses are researched first (what they sell, size, sourcing, current Indonesian coffees, fit 0-100 for Sumatra / Sulawesi / Java / Flores), then get a personalised **intro email**. |
 | 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook and every new-lead tab, finds **Open** rows with no reply after 5 days (quotes) or 10 days (leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Next action date**. |
+| 4 | `drive-sync` | Daily 8:30pm | Backs up the OneDrive `Origincrest` folder to Google Drive (`Business > Origincrest files synced from laptop`): copies new or changed files, including subfolders. Never deletes anything; files that disappear locally are just reported. |
 
 | Workbook | New leads it gets | Tabs | Email |
 |----------|-------------------|------|-------|
@@ -17,7 +18,7 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 
 `scripts\run.cmd check` lists the categories it found in your tabs, with an example company for each.
 
-The spreadsheets stay where they are, so your existing OneDrive → Google Drive backup keeps working.
+The spreadsheets stay where they are in OneDrive.
 
 ## Guardrails
 
@@ -140,6 +141,29 @@ styled like your existing headers, and Excel tables and filters are stretched to
    you while you're logged in, and catch up after the PC was asleep. Remove them with
    `scripts\uninstall_tasks.ps1`.
 
+## Google Drive backup (`drive-sync`)
+
+This replaces the "Origincrest Drive sync" cloud task. It uses **Google Drive for desktop**, Google's free sync
+app: the agent copies changed files into the Google Drive folder the app creates on your PC, and the app uploads
+them. There are no size limits, and an edited file becomes a new version of the same Drive file, so history is
+kept.
+
+1. Install Google Drive for desktop from <https://www.google.com/drive/download/> and sign in with the Google
+   account that has the `Business > Origincrest files synced from laptop` folder.
+2. In File Explorer, find that folder under **Google Drive (G:) > My Drive**. If the path differs (another drive
+   letter, or "Mirror files" mode, e.g. `C:\Users\swami\My Drive`), set it in `config.yaml`:
+   ```yaml
+   drive_sync:
+     destination: 'G:\My Drive\Business\Origincrest files synced from laptop'
+   ```
+3. Run `scripts\run.cmd drive-sync --dry-run`. Files the earlier cloud sync already uploaded are recognised
+   and not copied again; anything listed is new or changed. Then run `scripts\run.cmd drive-sync`.
+4. Run `install_tasks.ps1` again to add the daily task ("4 Drive sync", 8:30pm; change it with
+   `-DriveSyncTime 21:00`). Once it has run, pause the old cloud task so the two don't both upload.
+
+Skipped: Office lock files (`~$...`), `desktop.ini`, `Thumbs.db`, temp files. Report:
+`%LOCALAPPDATA%\OriginCrestAgent\reports\latest_drive-sync.md`.
+
 ## Your daily routine
 
 1. Open your **Drafts** folder. Every draft is a complete email to one contact: edit if you like, then
@@ -196,6 +220,7 @@ scripts\run.cmd leads [--dry-run] [--max-drafts N]
 scripts\run.cmd followup [--dry-run] [--max-drafts N]
 scripts\run.cmd flush        # write rows still queued from a run when Excel was open
 scripts\run.cmd drafts       # which mail folder drafts go to, and the drafts the agent saved there
+scripts\run.cmd drive-sync [--dry-run]   # back up the OneDrive Origincrest folder to Google Drive
 ```
 
 Each search is one category in one region (Adelaide/SA or other states). Each week focuses on different areas

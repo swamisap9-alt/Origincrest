@@ -6,7 +6,8 @@ param(
     [string]$DiscoverTime = "06:30",
     [string]$LeadsStart = "07:00",
     [int]$LeadsEveryHours = 2,
-    [string]$FollowupTime = "07:30"
+    [string]$FollowupTime = "07:30",
+    [string]$DriveSyncTime = "20:30"
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -28,17 +29,21 @@ function Add-AgentTask($name, $arguments, $trigger, $description) {
 
 $weekly = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DiscoverDay -At $DiscoverTime
 Add-AgentTask "1 Discover" "discover" $weekly `
-    "Weekly: find new roasters and forwarders/3PLs, add them as 'New - to review', then research them."
+    "Weekly: find new leads for each workbook (Adelaide / other states), then draft RFQs and intros."
 
 $leads = New-ScheduledTaskTrigger -Daily -At $LeadsStart
 $leads.Repetition = (New-ScheduledTaskTrigger -Once -At $LeadsStart `
     -RepetitionInterval (New-TimeSpan -Hours $LeadsEveryHours) -RepetitionDuration (New-TimeSpan -Hours 12)).Repetition
 Add-AgentTask "2 Leads" "leads" $leads `
-    "Every $LeadsEveryHours h from $($LeadsStart): research new roaster rows, score fit, save intro drafts."
+    "Every $LeadsEveryHours h from $($LeadsStart): draft RFQs / intros for new rows in the new-lead tabs."
 
 $weekdays = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $FollowupTime
 Add-AgentTask "3 Follow-up" "followup" $weekdays `
     "Weekdays: check replies, save follow-up drafts, update Last contacted / Next action date."
+
+$daily = New-ScheduledTaskTrigger -Daily -At $DriveSyncTime
+Add-AgentTask "4 Drive sync" "drive-sync" $daily `
+    "Daily: copy new or changed files from the OneDrive Origincrest folder to Google Drive (never deletes)."
 
 Write-Host ""
 Write-Host "Done. See them in Task Scheduler > Task Scheduler Library > OriginCrest."

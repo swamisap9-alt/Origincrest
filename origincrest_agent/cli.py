@@ -73,6 +73,14 @@ def cmd_check(cfg, args) -> int:
                 where = f" - e.g. {', '.join(cat.examples[:3])}" if cat.examples else ""
                 print(f"        - {cat.label}  [{email}; from {cat.source}]{where}")
             ok &= bool(cats)
+    from .config import expand_path
+
+    ds = cfg["drive_sync"]
+    for label, folder in (("OneDrive folder", ds["source"]), ("Google Drive folder", ds["destination"])):
+        found = expand_path(folder).is_dir()
+        print(("[OK] " if found else "[X] ") + f"Drive sync {label}: {folder}" + ("" if found else
+              " - not found" + (" (install / start Google Drive for desktop, or fix drive_sync.destination)"
+                                if label.startswith("Google") else "")))
     key_env = cfg["claude"]["api_key_env"]
     print(("[OK] " if cfg.secret(key_env) else "[X] ") + f"{key_env} " + ("set" if cfg.secret(key_env) else "missing"))
     ok &= bool(cfg.secret(key_env))
@@ -190,6 +198,10 @@ def run_workflow(cfg, args) -> int:
                 run_leads(ctx, max_drafts=args.max_drafts)
             elif args.command == "followup":
                 run_followup(ctx, max_drafts=args.max_drafts)
+            elif args.command == "drive-sync":
+                from .drive_sync import run_drive_sync
+
+                run_drive_sync(ctx)
             elif args.command == "flush":
                 commit(ctx, ChangeSet())
     except AgentBusy as exc:
@@ -230,6 +242,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("followup", help="workflow 3: check replies and draft follow-ups")
     p.add_argument("--dry-run", action="store_true", help="check and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)
+    p = sub.add_parser("drive-sync", help="copy new/changed OneDrive Origincrest files to Google Drive")
+    p.add_argument("--dry-run", action="store_true", help="list what would be copied, copy nothing")
     p = sub.add_parser("flush", help="write any rows still queued (e.g. after Excel was open)")
     p.add_argument("--dry-run", action="store_true")
 
