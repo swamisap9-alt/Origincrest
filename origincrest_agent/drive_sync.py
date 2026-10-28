@@ -108,6 +108,6 @@ def run_drive_sync(ctx: RunContext) -> int:
         _save(manifest_path, manifest)
     report.count("files copied to Google Drive", copied)
     if not copied and "Would copy" not in report.sections:
-        report.add("Drive sync", "No changes")
-    log.info("Drive sync: %d file(s) copied to %s", copied, dest)
+        report.add("Drive sync", "No changes", quiet=True)
+    (log.info if copied else log.debug)("Drive sync: %d file(s) copied to %s", copied, dest)
     return copied

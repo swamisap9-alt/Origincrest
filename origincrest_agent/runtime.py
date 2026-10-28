@@ -28,14 +28,15 @@ class Report:
         self.sections: dict[str, list[str]] = {}
         self.counts: dict[str, int] = {}
 
-    def add(self, section: str, line: str) -> None:
+    def add(self, section: str, line: str, quiet: bool = False) -> None:
         self.sections.setdefault(section, []).append(line)
-        log.info("[%s] %s", section, line)
+        (log.debug if quiet else log.info)("[%s] %s", section, line)
 
     def count(self, key: str, n: int = 1) -> None:
         self.counts[key] = self.counts.get(key, 0) + n
 
-    def write(self, directory: Path, usage: dict | None = None) -> Path:
+    def write(self, directory: Path, usage: dict | None = None, history: bool = True) -> Path:
+        """Write latest_<workflow>.md, plus a timestamped copy unless history=False."""
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{datetime.now():%Y-%m-%d_%H%M}_{self.workflow}.md"
         lines = [f"# OriginCrest agent - {self.workflow} - {fmt_date(self.today)}", ""]
@@ -45,8 +46,11 @@ class Report:
             lines += [f"## {section}", ""] + [f"- {item}" for item in items] + [""]
         if usage:
             lines += ["## Claude usage", ""] + [f"- {k}: {v}" for k, v in usage.items()] + [""]
+        latest = directory / f"latest_{self.workflow}.md"
+        latest.write_text("\n".join(lines), encoding="utf-8")
+        if not history:
+            return latest
         path.write_text("\n".join(lines), encoding="utf-8")
-        (directory / f"latest_{self.workflow}.md").write_text("\n".join(lines), encoding="utf-8")
         return path
 
 

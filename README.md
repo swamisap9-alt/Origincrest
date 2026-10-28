@@ -9,7 +9,7 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 | 1 | `discover` | Weekly (Mon 6:30) | Finds new leads on the web, separately for each workbook (below). Skips anything already in that workbook, then adds new rows with status **New - to review** to two tabs: one for Adelaide / SA, one for all other states. |
 | 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Turns each new lead into a draft written from its own row. Freight forwarders, customs brokers and 3PLs get a tailored **RFQ**. Coffee businesses are researched first (what they sell, size, sourcing, current Indonesian coffees, fit 0-100 for Sumatra / Sulawesi / Java / Flores), then get a personalised **intro email**. |
 | 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook and every new-lead tab, finds **Open** rows with no reply after 5 days (quotes) or 10 days (leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Next action date**. |
-| 4 | `drive-sync` | Daily 8:30pm | Backs up the OneDrive `Origincrest` folder to Google Drive (`Business > Origincrest files synced from laptop`): copies new or changed files, including subfolders. Never deletes anything; files that disappear locally are just reported. |
+| 4 | `drive-sync` | Checks every 15 min | When a file in the OneDrive `Origincrest` folder (or a subfolder) has changed, copies it to Google Drive (`Business > Origincrest files synced from laptop`). With no changes it does nothing: no copy, no report. Never deletes anything; files that disappear locally are just reported. |
 
 | Workbook | New leads it gets | Tabs | Email |
 |----------|-------------------|------|-------|
@@ -158,8 +158,9 @@ kept.
    ```
 3. Run `scripts\run.cmd drive-sync --dry-run`. Files the earlier cloud sync already uploaded are recognised
    and not copied again; anything listed is new or changed. Then run `scripts\run.cmd drive-sync`.
-4. Run `install_tasks.ps1` again to add the daily task ("4 Drive sync", 8:30pm; change it with
-   `-DriveSyncTime 21:00`). Once it has run, pause the old cloud task so the two don't both upload.
+4. Run `install_tasks.ps1` again to add the task ("4 Drive sync"). It checks every 15 minutes (change it with
+   `-DriveSyncEveryMinutes 30`) and only copies, and only writes a report, when something changed. Once it has
+   run, pause the old cloud task so the two don't both upload.
 
 Skipped: Office lock files (`~$...`), `desktop.ini`, `Thumbs.db`, temp files. Report:
 `%LOCALAPPDATA%\OriginCrestAgent\reports\latest_drive-sync.md`.

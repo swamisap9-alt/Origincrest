@@ -7,7 +7,7 @@ param(
     [string]$LeadsStart = "07:00",
     [int]$LeadsEveryHours = 2,
     [string]$FollowupTime = "07:30",
-    [string]$DriveSyncTime = "20:30"
+    [int]$DriveSyncEveryMinutes = 15
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -41,9 +41,12 @@ $weekdays = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednes
 Add-AgentTask "3 Follow-up" "followup" $weekdays `
     "Weekdays: check replies, save follow-up drafts, update Last contacted / Next action date."
 
-$daily = New-ScheduledTaskTrigger -Daily -At $DriveSyncTime
-Add-AgentTask "4 Drive sync" "drive-sync" $daily `
-    "Daily: copy new or changed files from the OneDrive Origincrest folder to Google Drive (never deletes)."
+# Checks every few minutes, all day; copies only when a file has changed (otherwise it does nothing).
+$sync = New-ScheduledTaskTrigger -Daily -At "00:00"
+$sync.Repetition = (New-ScheduledTaskTrigger -Once -At "00:00" `
+    -RepetitionInterval (New-TimeSpan -Minutes $DriveSyncEveryMinutes) -RepetitionDuration (New-TimeSpan -Hours 24)).Repetition
+Add-AgentTask "4 Drive sync" "drive-sync" $sync `
+    "Every $DriveSyncEveryMinutes min: if any file in the OneDrive Origincrest folder changed, copy it to Google Drive (never deletes)."
 
 Write-Host ""
 Write-Host "Done. See them in Task Scheduler > Task Scheduler Library > OriginCrest."

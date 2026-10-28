@@ -177,6 +177,10 @@ class State:
         self.db.commit()
         return cur.lastrowid
 
+    def discard_run(self, run_id: int) -> None:
+        self.db.execute("DELETE FROM runs WHERE id=?", (run_id,))
+        self.db.commit()
+
     def finish_run(self, run_id: int, summary: dict) -> None:
         self.db.execute(
             "UPDATE runs SET finished_at=?, summary_json=? WHERE id=?",

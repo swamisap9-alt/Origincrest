@@ -65,3 +65,24 @@ def test_dry_run_and_missing_drive_folder(folders, make_ctx, cfg, tmp_path):
     cfg.data["drive_sync"]["destination"] = str(tmp_path / "G" / "My Drive")
     with pytest.raises(RuntimeError, match="Google Drive for desktop"):
         run_drive_sync(make_ctx("drive-sync"))
+
+
+def test_scheduled_check_is_silent_when_nothing_changed(folders, cfg, tmp_path):
+    import yaml
+
+    from origincrest_agent.cli import main
+
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump(cfg.data), encoding="utf-8")
+    reports = cfg.data_dir / "reports"
+    assert main(["--config", str(config), "drive-sync"]) == 0
+    first = sorted(p.name for p in reports.glob("20*_drive-sync.md"))
+    assert len(first) == 1  # files were copied: one report
+    assert main(["--config", str(config), "drive-sync"]) == 0
+    assert sorted(p.name for p in reports.glob("20*_drive-sync.md")) == first  # nothing changed: no new report
+
+    cfg.data["drive_sync"]["destination"] = str(tmp_path / "G" / "My Drive")  # Google Drive app not running
+    config.write_text(yaml.safe_dump(cfg.data), encoding="utf-8")
+    assert main(["--config", str(config), "drive-sync"]) == 1
+    assert sorted(p.name for p in reports.glob("20*_drive-sync.md")) == first  # error only in latest_drive-sync.md
+    assert "Google Drive folder not found" in (reports / "latest_drive-sync.md").read_text()

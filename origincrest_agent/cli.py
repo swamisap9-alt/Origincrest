@@ -29,9 +29,9 @@ def _context(cfg, workflow: str, dry_run: bool) -> RunContext:
     )
 
 
-def _finish(ctx: RunContext) -> None:
+def _finish(ctx: RunContext, history: bool = True) -> None:
     usage = log_usage(ctx._agent)
-    path = ctx.report.write(ctx.cfg.data_dir / "reports", usage)
+    path = ctx.report.write(ctx.cfg.data_dir / "reports", usage, history=history)
     log.info("Report: %s", path)
 
 
@@ -186,8 +186,11 @@ def run_workflow(cfg, args) -> int:
     ctx = _context(cfg, args.command, args.dry_run)
     run_id = ctx.state.start_run(args.command)
     status = 0
+    # drive-sync runs every few minutes: if the agent is busy it just tries again at the next check.
+    quick_check = args.command == "drive-sync"
+    busy = False
     try:
-        with AgentLock(cfg.data_dir / "agent.lock"):
+        with AgentLock(cfg.data_dir / "agent.lock", wait_minutes=0 if quick_check else 45):
             if args.command == "discover":
                 split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
                 run_discover(ctx, workbooks=split(args.workbook), categories=split(args.categories),
@@ -205,14 +208,20 @@ def run_workflow(cfg, args) -> int:
             elif args.command == "flush":
                 commit(ctx, ChangeSet())
     except AgentBusy as exc:
+        busy = True
         ctx.report.add("Skipped", f"Not run: {exc}")
     except Exception as exc:  # noqa: BLE001 - log every failure to the report
         ctx.report.add("Errors", f"{type(exc).__name__}: {exc}")
         log.debug(traceback.format_exc())
         status = 1
     finally:
-        _finish(ctx)
-        ctx.state.finish_run(run_id, ctx.report.counts)
+        nothing_happened = busy or set(ctx.report.sections) == {"Drive sync"}
+        if quick_check and nothing_happened and status == 0:
+            ctx.state.discard_run(run_id)  # no changes: no report, no log noise
+        else:
+            # A failing quick check (e.g. Google Drive not running) updates latest_drive-sync.md only.
+            _finish(ctx, history=not (quick_check and status))
+            ctx.state.finish_run(run_id, ctx.report.counts)
         ctx.state.close()
     return status
 
