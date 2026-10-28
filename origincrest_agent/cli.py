@@ -12,7 +12,7 @@ from .llm import ClaudeAgent, log_usage
 from .mailer import Mailbox
 from .runtime import AgentBusy, AgentLock, ChangeSet, Report, RunContext, commit
 from .state import State
-from .utils import log, setup_logging, today_in
+from .utils import keep_awake, log, setup_logging, today_in
 from .verify import Verifier
 
 
@@ -190,7 +190,7 @@ def run_workflow(cfg, args) -> int:
     quick_check = args.command == "drive-sync"
     busy = False
     try:
-        with AgentLock(cfg.data_dir / "agent.lock", wait_minutes=0 if quick_check else 45):
+        with AgentLock(cfg.data_dir / "agent.lock", wait_minutes=0 if quick_check else 45), keep_awake():
             if args.command == "discover":
                 split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
                 run_discover(ctx, workbooks=split(args.workbook), categories=split(args.categories),

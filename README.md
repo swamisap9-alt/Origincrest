@@ -138,8 +138,10 @@ styled like your existing headers, and Excel tables and filters are stretched to
    powershell -ExecutionPolicy Bypass -File scripts\install_tasks.ps1
    ```
    Change times with e.g. `-DiscoverDay Sunday -DiscoverTime 20:00 -FollowupTime 07:00`. The tasks run as
-   you while you're logged in, and catch up after the PC was asleep. Remove them with
-   `scripts\uninstall_tasks.ps1`.
+   you while you're logged in (a locked screen is fine) and catch up on runs missed while the laptop was off.
+   **1 Discover** and **3 Follow-up** also wake the laptop from sleep when it's plugged in (the script turns on
+   "Allow wake timers" for plugged-in use), and the agent keeps it awake until the run finishes. Remove the
+   tasks with `scripts\uninstall_tasks.ps1`.
 
 ## Google Drive backup (`drive-sync`)
 

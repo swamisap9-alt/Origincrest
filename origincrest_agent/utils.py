@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import logging.handlers
+import os
 import re
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -64,6 +67,31 @@ def clean(value: Any) -> str:
 
 def fmt_date(d: date | None) -> str:
     return d.strftime("%d/%m/%Y") if d else ""
+
+
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+
+
+def _kernel32():
+    return ctypes.windll.kernel32 if os.name == "nt" else None
+
+
+@contextmanager
+def keep_awake():
+    """Stop Windows from sleeping while a run is in progress.
+
+    A laptop woken by a scheduled task goes back to sleep after about 2 idle minutes unless
+    a program asks it to stay awake, which would cut a Discover run short.
+    """
+    kernel32 = _kernel32()
+    if kernel32 is not None:
+        kernel32.SetThreadExecutionState(_ES_CONTINUOUS | _ES_SYSTEM_REQUIRED)
+    try:
+        yield
+    finally:
+        if kernel32 is not None:
+            kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
 
 
 def setup_logging(log_dir: Path, verbose: bool = False) -> None:

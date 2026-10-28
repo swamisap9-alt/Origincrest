@@ -95,3 +95,22 @@ def test_same_name_different_websites_are_different_companies():
     assert index.match(company="Bean Bar", website="beanbarperth.com.au") is None
     assert index.match(company="Bean Bar") is not None
     assert index.match(company="Bean Bar Cafe", website="https://www.beanbar.com.au") is not None
+
+
+def test_keep_awake_asks_windows_not_to_sleep(monkeypatch):
+    from origincrest_agent import utils
+
+    calls = []
+
+    class FakeKernel32:
+        def SetThreadExecutionState(self, flags):
+            calls.append(flags)
+
+    monkeypatch.setattr(utils, "_kernel32", lambda: FakeKernel32())
+    with utils.keep_awake():
+        assert calls == [0x80000001]  # ES_CONTINUOUS | ES_SYSTEM_REQUIRED while running
+    assert calls[-1] == 0x80000000  # back to normal afterwards
+
+    monkeypatch.setattr(utils, "_kernel32", lambda: None)  # not Windows: no-op
+    with utils.keep_awake():
+        pass
