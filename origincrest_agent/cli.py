@@ -50,7 +50,7 @@ def cmd_check(cfg, args) -> int:
             ok = False
             continue
         lock = excel_lock_reason(path)
-        print(f"[OK] {name}: {path.name}" + (f"  (currently not writable: {lock})" if lock else ""))
+        print(f"[OK] {name}: {path}" + (f"  (currently not writable: {lock})" if lock else ""))
         for warning in store.load_warnings:
             print(f"     [!] {warning} - this Excel feature won't survive the agent's saves")
         for view in store.views():
