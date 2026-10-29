@@ -138,7 +138,18 @@ DEFAULTS: dict[str, Any] = {
     "followup": {
         # Every tab of these workbooks, plus the new-lead tabs of all workbooks.
         "workbooks": ["rfq"],
-        "open_statuses": ["open"],
+        "open_statuses": ["open", "sent", "rfq sent", "awaiting reply", "awaiting quote", "waiting", "pending",
+                          "followed up"],
+        # Rows with no status (e.g. a Contacts tab without a Status column) count as open once their
+        # "Date sent" / "Last contacted" is filled in.
+        "blank_status_is_open": True,
+        # Notes meaning "phone them": the draft gets [CALL FIRST] and the phone number at the top.
+        "call_phrases": ["need to be called", "needs to be called", "to be called", "need to call", "needs a call",
+                         "need a call", "call first", "call them", "call back", "call instead", "please call",
+                         "call required", "call needed", "phone first", "phone them", "ring them"],
+        # Notes meaning no follow-up is needed (for rows without a status).
+        "done_phrases": ["quote received", "quoted", "declined", "not interested", "closed", "no follow up",
+                         "no further follow up", "do not follow up", "don't follow up"],
         "quote_days": 5,
         "lead_days": 10,
         "max_drafts_per_run": 15,

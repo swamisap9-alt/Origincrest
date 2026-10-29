@@ -24,7 +24,7 @@ from openpyxl.worksheet.table import TableColumn
 
 from .dedupe import DedupeIndex
 from .schema import FIELD_BY_KEY, NEW_TAB_KEYS, NOT_FOR_EMAIL, category_kind, match_header, match_weak_header
-from .utils import clean, fmt_date, log
+from .utils import clean, fmt_date, log, to_date
 
 HEADER_FILL = PatternFill("solid", fgColor="DDEBF7")
 _SCAN_ROWS = 15
@@ -104,6 +104,11 @@ class Row:
 
     def context(self) -> dict[str, str]:
         return self.sheet.row_context(self.index)
+
+    def last_contact_date(self) -> date | None:
+        """The later of "Last contacted" and your own "Date sent"."""
+        dates = [d for d in (to_date(self.get("last_contacted")), to_date(self.get("date_sent"))) if d]
+        return max(dates) if dates else None
 
     def email_context(self, skip: tuple[str, ...] = ()) -> dict[str, str]:
         """The row as the email writer sees it: your columns, without the agent's bookkeeping."""

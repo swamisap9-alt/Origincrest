@@ -8,7 +8,7 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 |---|----------|------|--------------|
 | 1 | `discover` | Weekly (Mon 6:30) | Finds new leads on the web, separately for each workbook (below). Skips anything already in that workbook, then adds new rows with status **New - to review** to two tabs: one for Adelaide / SA, one for all other states. |
 | 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Turns each new lead into a draft written from its own row. Freight forwarders, customs brokers and 3PLs get a tailored **RFQ**. Coffee businesses are researched first (what they sell, size, sourcing, current Indonesian coffees, fit 0-100 for Sumatra / Sulawesi / Java / Flores), then get a personalised **intro email**. |
-| 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook and every new-lead tab, finds **Open** rows with no reply after 5 days (quotes) or 10 days (leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Next action date**. |
+| 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook (e.g. its **contacts** tab) and every new-lead tab, finds **Open** rows, or rows with a **Date sent** and no status, with no reply by the row's **Followup date** (or after 5 days for quotes, 10 for leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Followup date**. Rows whose **Notes** say "need to be called" get a **[CALL FIRST]** draft with the phone number and call points. |
 | 4 | `drive-sync` | Checks every 15 min | When a file in the OneDrive `Origincrest` folder (or a subfolder) has changed, copies it to Google Drive (`Business > Origincrest files synced from laptop`). With no changes it does nothing: no copy, no report. Never deletes anything; files that disappear locally are just reported. |
 
 | Workbook | New leads it gets | Tabs | Email |
@@ -72,8 +72,19 @@ Open ─(bounce)─────────────────────�
 - Want to vet discovered rows before any intro is drafted? Set `leads.draft_for_unreviewed: false`. The agent
   then researches and scores them, and drafts only after you change the status to `Reviewed` or `Approved`.
 - `Approved` also overrides a low fit score.
-- RFQs you send yourself: set the row to `Open` with a `Last contacted` date (or just send from this mailbox:
-  the agent picks the date up from your Sent folder) and it will be chased after 5 days.
+- RFQs you send yourself: fill in the row's `Date sent` (or set it to `Open` with a `Last contacted` date, or
+  just send from this mailbox: the agent picks the date up from your Sent folder) and it will be chased after
+  5 days, or on the row's `Followup date` if you set one.
+- **Tabs without a Status column** (like the RFQ workbook's `contacts` tab): a row counts as open once
+  `Date sent` is filled in. It stops being chased when a reply arrives (the agent adds a `Status` column and
+  marks it `Replied - review`), or when its `Notes` say e.g. `quote received`, `declined`, `not interested`,
+  `closed` or `no follow up` (`followup.done_phrases`). Your `Date sent` and `Notes` are never changed.
+- **Want to phone instead?** Put e.g. `need to be called` in the row's `Notes` (`followup.call_phrases` lists
+  what counts). When the follow-up is due, the draft's subject starts with `[CALL FIRST]` and a block at the
+  top gives your note, the phone number and 2-4 points for the call; the email underneath is only for after
+  the call. If the row has no email address, you get a call reminder addressed to yourself instead. Neither
+  counts as contact, so `Last contacted` isn't changed; `Followup date` moves on 5/10 days. After the call,
+  update `Notes` / `Followup date` (or set a `Status`).
 - Quote vs lead: taken from the `Record type` column (the agent fills it in for new leads), otherwise from the
   Category (logistics words like freight / 3PL / customs mean quote), otherwise from the workbook: RFQ workbook
   rows are quotes, master workbook rows are leads.
@@ -90,7 +101,7 @@ styled like your existing headers, and Excel tables and filters are stretched to
 |----------|--------------------|
 | 1 | Company, Category, Contact name, Role, Email, Phone, Website, City, State, Services / offering, Talking points, Source URL, Status, Date added, Added by, Record type, Agent notes |
 | 2 | Draft created, Draft subject; for coffee businesses also Coffee offering, Size estimate, Sourcing, Current Indonesian coffees, Fit score (0-100), Best-fit origins, Fit rationale, Researched on |
-| 3 | Last contacted, Next action date, Last reply, Follow-ups drafted, Agent notes |
+| 3 | Last contacted, Next action date (your `Followup date` if you have one), Last reply, Follow-ups drafted, Agent notes; Status only when a reply, unsubscribe or bounce comes in |
 
 ## Setup (Windows, about 20 minutes)
 

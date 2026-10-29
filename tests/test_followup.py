@@ -144,3 +144,112 @@ def test_sent_rfq_becomes_open_with_5_day_chase(cfg, agent, mailbox, make_ctx):
     assert row["Status"] == "Open"
     assert row["Next action date"].date() == TODAY + timedelta(days=3)  # sent 2 days ago + 5
     assert not [m for m in mailbox.drafts if "sbw" in m["To"]]  # not due yet
+
+
+def add_contacts_tab(cfg):
+    """A tab like the real "contacts" one: no Status column, your own Notes / Date sent / Followup date."""
+    wb = openpyxl.load_workbook(cfg.workbook_path("rfq"))
+    ws = wb.create_sheet("contacts")
+    ws.append(["Company", "Contact", "Email", "Phone", "Services", "Notes", "Date sent", "Followup date"])
+    for row in [
+        ["Smith Channon", "Ann Lee", "ops@smithchannon.com.au", "08 8200 1111", "Customs brokerage", None,
+         TODAY - timedelta(days=8), None],
+        ["Pakval", None, "info@pakval.com.au", None, "Fumigation", None, TODAY - timedelta(days=8),
+         TODAY + timedelta(days=2)],
+        ["CTI Interstate", "Ben", "sales@cti.com.au", "08 8300 2222", "Interstate transport", "Need to be called",
+         TODAY - timedelta(days=6), None],
+        ["Adelaide Devanning", None, None, "0411 111 111", "Devanning", "needs to be called re pallet rates",
+         TODAY - timedelta(days=9), None],
+        ["Quick Quote Co", None, "rfq@quickquote.com.au", None, None, "Quote received 20/10",
+         TODAY - timedelta(days=20), None],
+        ["Not Yet Sent Pty", None, "hello@notyet.com.au", None, None, None, None, None],
+        ["Early Chase Freight", None, "rfq@earlychase.com.au", None, None, None, TODAY - timedelta(days=2),
+         TODAY - timedelta(days=1)],
+    ]:
+        ws.append(row)
+    wb.save(cfg.workbook_path("rfq"))
+
+
+def contacts_rows(cfg):
+    ws = openpyxl.load_workbook(cfg.workbook_path("rfq"))["contacts"]
+    headers = [c.value for c in ws[1]]
+    return {r[0].value: dict(zip(headers, (c.value for c in r))) for r in ws.iter_rows(min_row=2) if r[0].value}
+
+
+def call_aware_agent(agent):
+    def structured(*, system, prompt, schema, effort):
+        agent.calls.append(("structured", prompt))
+        points = ["Check the customs quote is coming", "Ask about lead time"] if "call_points" in prompt else []
+        return {"subject": "Following up on our RFQ", "body": "Hi,\n\nJust following up on our request.\n\nThanks,",
+                "call_points": points}
+    agent.structured = structured
+
+
+def test_contacts_tab_columns_are_read_not_taken_over(cfg):
+    add_contacts_tab(cfg)
+    view = WorkbookStore("rfq", cfg.workbook_path("rfq"), cfg).load().view("contacts")
+    assert view.columns["date_sent"] == 7
+    assert view.columns["next_action_date"] == 8
+    assert view.columns["user_notes"] == 6
+    assert not view.has("status") and not view.has("last_contacted")
+
+
+def test_contacts_tab_followups_use_date_sent_followup_date_and_call_notes(cfg, agent, mailbox, make_ctx):
+    add_contacts_tab(cfg)
+    call_aware_agent(agent)
+    ctx = make_ctx("followup")
+    run_followup(ctx)
+    drafts = {m["To"]: m for m in mailbox.drafts}
+
+    # Date sent 8 days ago, no Followup date: due after 5 days.
+    smith = drafts["Ann Lee <ops@smithchannon.com.au>"]
+    assert smith["Subject"] == "Following up on our RFQ"
+    assert "CALL FIRST" not in smith.get_content()
+    # Your Followup date (yesterday) wins over date sent + 5.
+    assert "rfq@earlychase.com.au" in drafts
+    # Not due (Followup date ahead), closed by the notes, or never sent.
+    assert not any(a in to for to in drafts for a in ("pakval", "quickquote", "notyet"))
+
+    # "Need to be called" with an email: flagged follow-up with the phone number and call points.
+    cti = drafts["Ben <sales@cti.com.au>"]
+    assert cti["Subject"] == "[CALL FIRST] Following up on our RFQ"
+    text = cti.get_content()
+    assert text.index("CALL FIRST") < text.index("Just following up")
+    assert "Your note: Need to be called" in text and "08 8300 2222" in text
+    assert "- Check the customs quote is coming" in text
+    assert 'delete this block and "[CALL FIRST]"' in text
+
+    # No email: a call reminder addressed to you, with no marketing footer.
+    reminder = drafts["Swami K <hello@origincrest.com.au>"]
+    assert reminder["Subject"] == "[CALL] Adelaide Devanning: follow-up #1 due"
+    assert "0411 111 111" in reminder.get_content() and "pallet rates" in reminder.get_content()
+    assert "unsubscribe" not in reminder.get_content().lower() and not reminder["List-Unsubscribe"]
+    assert "Call needed - follow-up drafted with [CALL FIRST]" in ctx.report.sections
+    assert "Call reminders drafted (addressed to you)" in ctx.report.sections
+
+    rows = contacts_rows(cfg)
+    assert rows["Smith Channon"]["Date sent"].date() == TODAY - timedelta(days=8)  # yours, never overwritten
+    assert rows["Smith Channon"]["Last contacted"].date() == TODAY
+    assert rows["Smith Channon"]["Followup date"].date() == TODAY + timedelta(days=5)
+    assert rows["Smith Channon"]["Notes"] is None
+    assert rows["CTI Interstate"]["Last contacted"] is None  # you're calling, not emailing
+    assert rows["CTI Interstate"]["Followup date"].date() == TODAY + timedelta(days=5)
+    assert "Your notes say call" in rows["CTI Interstate"]["Agent notes"]
+    assert rows["CTI Interstate"]["Notes"] == "Need to be called"
+    assert rows["Pakval"]["Followup date"].date() == TODAY + timedelta(days=2)
+    assert rows["Quick Quote Co"]["Agent notes"] is None
+
+    # Next weekday run: nothing new until the next Followup date.
+    count = len(mailbox.drafts)
+    run_followup(make_ctx("followup"))
+    assert len(mailbox.drafts) == count
+
+
+def test_contacts_tab_reply_marks_row(cfg, agent, mailbox, make_ctx):
+    add_contacts_tab(cfg)
+    mailbox.inbox.append(mail("INBOX", utc(TODAY - timedelta(days=3)), "ann@smithchannon.com.au",
+                              "hello@origincrest.com.au", "Re: RFQ customs", text="Quote attached."))
+    run_followup(make_ctx("followup"))
+    assert not [m for m in mailbox.drafts if "smithchannon" in m["To"]]
+    row = contacts_rows(cfg)["Smith Channon"]
+    assert row["Status"] == "Replied - review"  # added so later runs leave it alone

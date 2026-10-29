@@ -275,12 +275,30 @@ Plain text, Australian English, 50-110 words; later follow-ups are shorter. Use 
 details, the original email and the OriginCrest background. End with a short sign-off such as "Thanks," - \
 the signature and any unsubscribe line are added automatically, so don't write them. If you are told \
 the email continues an existing thread, write the body only; the subject is set for you, so return the \
-subject you'd use anyway."""
+subject you'd use anyway.
+
+The row details are OriginCrest's own spreadsheet row. Notes and comments in it are private (e.g. "need to be \
+called", "slow to reply"): use them for context, but never quote them or mention them in the email.
+
+call_points: when you're told OriginCrest will phone this contact, give 2-4 short points for the call (each \
+under 15 words): what was asked for, what to find out, any timing. Otherwise return an empty list."""
+
+FOLLOWUP_SCHEMA = obj({
+    "subject": {"type": "string"},
+    "body": {"type": "string"},
+    "call_points": {"type": "array", "items": {"type": "string"}},
+})
 
 
 def followup_prompt(*, record_type: str, number: int, row_context: dict[str, str], original: str,
-                    days_since: int, threaded: bool, cfg) -> str:
+                    days_since: int, threaded: bool, cfg, call: bool = False, has_email: bool = True) -> str:
     thread_note = "This continues the original email thread." if threaded else "There is no earlier thread to reply to."
+    if call and has_email:
+        thread_note += (" OriginCrest's notes say to phone this contact, so also give call_points; the email is "
+                        "only sent if they still want to write after the call.")
+    elif call:
+        thread_note += (" There's no email address for them and OriginCrest will phone instead: give call_points, "
+                        "and keep the subject and body to one line each (they aren't used).")
     return f"""Write follow-up #{number} ({record_type}). It's been {days_since} days since we last \
 contacted them with no reply. {thread_note}
 

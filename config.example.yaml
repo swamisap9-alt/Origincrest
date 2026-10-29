@@ -60,7 +60,15 @@ rfq:
 # Workflow 3 (weekdays): all tabs of these workbooks, plus every workbook's new-lead tabs.
 followup:
   workbooks: [rfq]
-  open_statuses: [Open]
+  open_statuses: [Open, Sent, RFQ sent, Awaiting reply, Awaiting quote, Waiting, Pending, Followed up]
+  blank_status_is_open: true   # rows with no status are open once "Date sent" is filled in
+  # Notes that mean "phone them": the draft gets [CALL FIRST], the phone number and call points.
+  call_phrases: [need to be called, needs to be called, to be called, need to call, needs a call, need a call,
+                 call first, call them, call back, call instead, please call, call required, call needed,
+                 phone first, phone them, ring them]
+  # Notes that mean no more follow-ups (for rows with no status).
+  done_phrases: [quote received, quoted, declined, not interested, closed, no follow up, no further follow up,
+                 do not follow up, don't follow up]
   quote_days: 5
   lead_days: 10
   max_drafts_per_run: 15

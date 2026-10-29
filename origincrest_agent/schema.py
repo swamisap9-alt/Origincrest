@@ -83,9 +83,15 @@ FIELDS: list[Field] = [
     ), width=12),
     Field("last_contacted", "Last contacted", (
         "last contacted", "last contact", "last contact date", "date contacted", "contacted on",
-        "date of last contact", "last emailed", "rfq sent", "rfq sent date", "date sent",
-        "sent date", "date requested", "rfq date", "date rfq sent", "last contacted date",
+        "date of last contact", "last emailed", "last contacted date",
     ), width=14, is_date=True),
+    # Your own "Date sent": read, never overwritten (the agent records its follow-ups in Last contacted).
+    Field("date_sent", "Date sent", (
+        "date sent", "sent date", "sent on", "rfq sent", "rfq sent date", "date rfq sent", "date requested",
+        "rfq date", "date emailed",
+    ), width=14, is_date=True),
+    # Your own notes: read (e.g. "need to be called"), never written.
+    Field("user_notes", "Notes", ("notes", "note", "comments", "comment", "remarks", "my notes"), width=40),
     Field("next_action_date", "Next action date", (
         "next action date", "follow up date", "next follow up", "next follow up date", "follow up on",
         "followup date", "chase date", "next step date", "next contact date", "due date",

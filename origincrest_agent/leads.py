@@ -54,8 +54,8 @@ def _candidates(ctx: RunContext, stores: dict[str, WorkbookStore],
                 if redraft is not None:
                     if status in never or not any(w and w in core_name(company) for w in wanted):
                         continue
-                elif row.text("draft_created") or status not in eligible:
-                    continue
+                elif row.text("draft_created") or status not in eligible or row.last_contact_date():
+                    continue  # already drafted, not ready, or already contacted (Date sent / Last contacted)
                 key = primary_key(company, row.text("website"), _first_email(row.text("email")))
                 groups.setdefault(key, []).append(row)
 
@@ -153,7 +153,7 @@ class LeadRun:
                 if view.title in self.cfg.lead_tabs(name):
                     continue
                 for row in view.rows():
-                    sent_on = to_date(row.get("last_contacted"))
+                    sent_on = row.last_contact_date()
                     status = row.text("status").lower()
                     if row.kind != "freight" or not (sent_on or status in ("open", "quoted", "replied - review")):
                         continue
