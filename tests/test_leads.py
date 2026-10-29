@@ -220,3 +220,45 @@ def test_offer_section_is_optional(cfg, agent, mailbox, make_ctx):
     assert config_sender_problems(cfg) == []
     text = offer_text(cfg)
     assert DEFAULT_SUMMARY in text and "Origins offered: Sumatra; Flores" in text and "<<" not in text
+
+
+def seed_freight(cfg, company="Indo Freight Lines", email="rfq@indofreight.com.au"):
+    store = WorkbookStore("rfq", cfg.workbook_path("rfq"), cfg).load()
+    store.get_or_create("New Freight-3PL - Adelaide", "freight").append({
+        "company": company, "category": "Freight forwarder", "email": email, "city": "Port Adelaide",
+        "state": "SA", "services": "Green coffee FCL", "status": "New - to review", "record_type": "Quote",
+        "added_by": "OriginCrest Agent"})
+    store.save(cfg.data_dir / "backups")
+
+
+def test_redraft_after_you_deleted_the_draft(cfg, agent, mailbox, make_ctx):
+    seed_freight(cfg)
+    assert run_leads(make_ctx("leads")) == 1
+    first_id = mailbox.drafts[0]["Message-ID"]
+    assert run_leads(make_ctx("leads")) == 0  # normally never drafted twice
+
+    # Still in Drafts: the redraft refuses, so you don't get two.
+    ctx = make_ctx("redraft")
+    assert run_leads(ctx, redraft=["indo freight", "Nobody Pty Ltd"]) == 0
+    assert "Still in Drafts" in ctx.report.sections
+    assert "Nobody Pty Ltd" in " ".join(ctx.report.sections["Not found"])
+
+    mailbox.drafts.clear()  # you deleted it
+    agent.structured_queue = [{"subject": "RFQ: FCL Belawan to Port Adelaide", "body": "Hi team,\n\nNew text.\n\nKind regards,"}]
+    ctx = make_ctx("redraft")
+    assert run_leads(ctx, redraft=["Indo Freight"]) == 1
+    assert len(mailbox.drafts) == 1 and mailbox.drafts[0]["Message-ID"] != first_id
+    row = sheet(cfg, "rfq", "New Freight-3PL - Adelaide")["Indo Freight Lines"]
+    assert row["Status"] == "RFQ drafted - to review" and row["Draft subject"] == "RFQ: FCL Belawan to Port Adelaide"
+    assert ctx.state.draft("domain:indofreight.com.au", "rfq", 1)["message_id"] == mailbox.drafts[0]["Message-ID"]
+
+
+def test_redraft_skips_companies_you_already_emailed(cfg, agent, mailbox, make_ctx):
+    seed_freight(cfg)
+    run_leads(make_ctx("leads"))
+    mailbox.drafts.clear()
+    mailbox.sent.append(mail("Sent", utc(TODAY), "hello@origincrest.com.au", "rfq@indofreight.com.au", "RFQ"))
+    ctx = make_ctx("redraft")
+    assert run_leads(ctx, redraft=["Indo Freight Lines"]) == 0
+    assert "Already contacted" in ctx.report.sections
+    assert sheet(cfg, "rfq", "New Freight-3PL - Adelaide")["Indo Freight Lines"]["Status"] == "Open"

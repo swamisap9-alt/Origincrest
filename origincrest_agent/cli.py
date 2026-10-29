@@ -199,6 +199,8 @@ def run_workflow(cfg, args) -> int:
                     run_leads(ctx)
             elif args.command == "leads":
                 run_leads(ctx, max_drafts=args.max_drafts)
+            elif args.command == "redraft":
+                run_leads(ctx, redraft=args.companies)
             elif args.command == "followup":
                 run_followup(ctx, max_drafts=args.max_drafts)
             elif args.command == "drive-sync":
@@ -248,6 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("leads", help="workflow 2: research new leads and draft intro / RFQ emails")
     p.add_argument("--dry-run", action="store_true", help="research and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)
+    p = sub.add_parser("redraft", help="write a new first draft for companies whose draft you deleted")
+    p.add_argument("companies", nargs="+", help='company names as in the sheet, e.g. "Smith Channon" Pakval')
+    p.add_argument("--dry-run", action="store_true", help="preview the drafts as .eml files only")
     p = sub.add_parser("followup", help="workflow 3: check replies and draft follow-ups")
     p.add_argument("--dry-run", action="store_true", help="check and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)

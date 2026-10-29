@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from typing import Callable
 
 from . import compliance
-from .dedupe import EMAIL_RE, norm_email, primary_key
+from .dedupe import EMAIL_RE, core_name, norm_email, primary_key
 from .llm import AgentError
 from .mailer import build_message
 from .prompts import (EMAIL_SCHEMA, INTRO_SYSTEM, RECORD_RESEARCH, RESEARCH_SYSTEM, RFQ_SYSTEM, _filled,
@@ -33,9 +33,13 @@ def _first_email(text: str) -> str:
     return norm_email(match.group(0)) if match else ""
 
 
-def _candidates(ctx: RunContext, stores: dict[str, WorkbookStore]) -> dict[str, list[Row]]:
+def _candidates(ctx: RunContext, stores: dict[str, WorkbookStore],
+                redraft: list[str] | None = None) -> dict[str, list[Row]]:
+    """Rows waiting for a draft - or, with `redraft`, the rows of those companies whatever their status."""
     cfg = ctx.cfg
     eligible = {s.strip().lower() for s in cfg["leads"]["eligible_statuses"]}
+    never = cfg.skip_statuses | {cfg.status("unsubscribed").lower()}
+    wanted = [core_name(name) for name in redraft or []]
     groups: dict[str, list[Row]] = {}
     for store in stores.values():
         tabs = cfg.lead_tabs(store.name)
@@ -44,9 +48,13 @@ def _candidates(ctx: RunContext, stores: dict[str, WorkbookStore]) -> dict[str, 
                 continue
             for row in view.rows():
                 company = row.text("company")
-                if not company or row.text("draft_created"):
+                if not company:
                     continue
-                if row.text("status").lower() not in eligible:
+                status = row.text("status").lower()
+                if redraft is not None:
+                    if status in never or not any(w and w in core_name(company) for w in wanted):
+                        continue
+                elif row.text("draft_created") or status not in eligible:
                     continue
                 key = primary_key(company, row.text("website"), _first_email(row.text("email")))
                 groups.setdefault(key, []).append(row)
@@ -85,7 +93,9 @@ def _email_context(data: dict) -> dict:
 
 
 class LeadRun:
-    def __init__(self, ctx: RunContext, stores: dict[str, WorkbookStore], max_drafts: int | None):
+    def __init__(self, ctx: RunContext, stores: dict[str, WorkbookStore], max_drafts: int | None,
+                 redraft: bool = False):
+        self.redraft = redraft  # draft again for companies whose earlier draft was deleted
         self.ctx, self.cfg, self.report = ctx, ctx.cfg, ctx.report
         self.lc = ctx.cfg["leads"]
         self.stores = stores
@@ -186,7 +196,7 @@ class LeadRun:
             report.add("Waiting for your review", line)
             self._finish(rows, values, notes, "Change status to Reviewed or Approved to get a draft")
             return
-        existing = self.ctx.state.draft(key, workflow, 1)
+        existing = None if self.redraft else self.ctx.state.draft(key, workflow, 1)
         if existing is not None:
             subject, created = existing["subject"], date.fromisoformat(existing["created_on"])
         else:
@@ -196,6 +206,9 @@ class LeadRun:
                 self._finish(rows, values, notes, "Draft deferred (per-run cap)")
                 return
             mailbox = self._mailbox()
+            if mailbox is not None and self.redraft and mailbox.draft_waiting(to_addr=email):
+                report.add("Still in Drafts", f"{line} - a draft to {email} is already in your Drafts folder")
+                return
             if mailbox is not None:
                 earlier = mailbox.messages_to(email, self.ctx.today - timedelta(days=365))
                 if earlier and earlier[0].when:
@@ -291,7 +304,8 @@ class LeadRun:
         category = row.text("category")
         line = (f"{company}{f' [{category}]' if category else ''}: fit {score}/100 "
                 f"({values['fit_origins'] or 'no origin match'})")
-        if email and score < lc["min_fit_score_for_draft"] and row.text("status").lower() not in self.approved:
+        if (email and score < lc["min_fit_score_for_draft"] and not self.redraft
+                and row.text("status").lower() not in self.approved):
             self.report.add("Low fit (no draft)", line)
             self._finish(rows, values, notes, f"Fit {score} is below {lc['min_fit_score_for_draft']} - no draft. "
                                               "Set status to Approved to draft anyway.", cfg.status("low_fit"))
@@ -319,7 +333,8 @@ class LeadRun:
                     line=line, compose=compose)
 
 
-def run_leads(ctx: RunContext, max_drafts: int | None = None) -> int:
+def run_leads(ctx: RunContext, max_drafts: int | None = None, redraft: list[str] | None = None) -> int:
+    """Draft for new leads; with `redraft` (company names), draft again for just those companies."""
     cfg = ctx.cfg
     names = [n for n in cfg["workbooks"] if cfg.lead_tabs(n)]
     stores = {}
@@ -328,9 +343,14 @@ def run_leads(ctx: RunContext, max_drafts: int | None = None) -> int:
             stores[name] = WorkbookStore(name, cfg.workbook_path(name), cfg).load()
         except FileNotFoundError as exc:
             ctx.report.add("Errors", str(exc))
-    groups = _candidates(ctx, stores)
-    log.info("%d new lead(s) waiting for research or a draft", len(groups))
-    run = LeadRun(ctx, stores, max_drafts)
+    groups = _candidates(ctx, stores, redraft)
+    if redraft is not None:
+        found = [r.text("company") for rows in groups.values() for r in rows]
+        for name in redraft:
+            if not any(core_name(name) in core_name(c) for c in found):
+                ctx.report.add("Not found", f"No row for '{name}' in the new-lead tabs")
+    log.info("%d lead(s) to research or draft", len(groups))
+    run = LeadRun(ctx, stores, max_drafts, redraft=redraft is not None)
     for name in stores:
         run.changes.touch(name)  # also writes any rows still queued from discovery
     try:

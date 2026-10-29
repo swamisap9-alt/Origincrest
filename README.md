@@ -224,6 +224,7 @@ scripts\run.cmd check [--api]
 scripts\run.cmd init-sheets [--dry-run]
 scripts\run.cmd discover [--dry-run] [--workbook rfq|master] [--categories "Roasters,Importers"] [--region adelaide|other] [--max-rows N] [--no-leads]
 scripts\run.cmd leads [--dry-run] [--max-drafts N]
+scripts\run.cmd redraft "Smith Channon" Pakval [--dry-run]   # new first draft after you deleted one
 scripts\run.cmd followup [--dry-run] [--max-drafts N]
 scripts\run.cmd flush        # write rows still queued from a run when Excel was open
 scripts\run.cmd drafts       # which mail folder drafts go to, and the drafts the agent saved there
