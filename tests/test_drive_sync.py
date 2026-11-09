@@ -86,3 +86,27 @@ def test_scheduled_check_is_silent_when_nothing_changed(folders, cfg, tmp_path):
     assert main(["--config", str(config), "drive-sync"]) == 1
     assert sorted(p.name for p in reports.glob("20*_drive-sync.md")) == first  # error only in latest_drive-sync.md
     assert "Google Drive folder not found" in (reports / "latest_drive-sync.md").read_text()
+
+
+def test_file_open_in_word_is_explained(folders, make_ctx, monkeypatch):
+    import shutil
+
+    src, dst = folders
+    quote = src / "OriginCrest enquiries" / "Quotation - Soho.docx"
+    quote.write_bytes(b"docx")
+    real_copy = shutil.copyfile
+
+    def copyfile(a, b):
+        if str(a).endswith(".docx"):
+            raise PermissionError(13, "Permission denied", str(a))
+        return real_copy(a, b)
+
+    monkeypatch.setattr(shutil, "copyfile", copyfile)
+    ctx = make_ctx("drive-sync")
+    run_drive_sync(ctx)
+    [error] = ctx.report.sections["Errors"]
+    assert "Quotation - Soho.docx" in error and "open in another program" in error
+    monkeypatch.setattr(shutil, "copyfile", real_copy)  # closed in Word: copied at the next check
+    ctx = make_ctx("drive-sync")
+    assert run_drive_sync(ctx) == 1
+    assert (dst / "OriginCrest enquiries" / "Quotation - Soho.docx").read_bytes() == b"docx"

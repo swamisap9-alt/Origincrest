@@ -97,6 +97,12 @@ def run_drive_sync(ctx: RunContext) -> int:
             manifest[key] = {"sha256": digest, "size": st.st_size, "mtime": st.st_mtime_ns}
             report.add(action, key)
             copied += 1
+        except PermissionError as exc:
+            # Not a folder permission problem: Windows refuses to share a file that's open or mid-sync.
+            where = ("the Google Drive copy is open or busy" if exc.filename and Path(exc.filename) != path
+                     else "it's open in another program (e.g. Word or Excel) or OneDrive is still syncing it")
+            report.add("Errors", f"{key}: can't copy it right now - {where}. It will be copied at the next "
+                                 "check after it's closed.")
         except OSError as exc:
             report.add("Errors", f"{key}: {exc} - will retry next run")
 
