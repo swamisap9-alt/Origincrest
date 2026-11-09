@@ -286,7 +286,11 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
     override: dict[str, Any] = {}
     if cfg_path.exists():
         with open(cfg_path, encoding="utf-8") as fh:
-            override = yaml.safe_load(fh) or {}
+            try:
+                override = yaml.safe_load(fh) or {}
+            except yaml.YAMLError as exc:
+                raise ConfigError(f"{cfg_path} has a layout mistake (check the indentation around the line "
+                                  f"shown; use spaces, not tabs): {exc}") from exc
         if not isinstance(override, dict):
             raise ConfigError(f"{cfg_path} must contain a YAML mapping")
     elif path:

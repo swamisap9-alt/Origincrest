@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 import traceback
+from datetime import datetime
 
 from . import __version__
-from .config import ConfigError, load_config
+from .config import DEFAULTS, ConfigError, expand_path, load_config
 from .llm import ClaudeAgent, log_usage
 from .mailer import Mailbox
 from .runtime import AgentBusy, AgentLock, ChangeSet, Report, RunContext, commit
@@ -265,13 +266,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = load_config(args.config)
     except ConfigError as exc:
-        print(f"Config error: {exc}", file=sys.stderr)
+        _config_failure(f"Config error: {exc}")
         return 2
     setup_logging(cfg.data_dir / "logs", verbose=args.verbose)
-    if args.command == "check":
-        return cmd_check(cfg, args)
-    if args.command == "init-sheets":
-        return cmd_init_sheets(cfg, args)
-    if args.command == "drafts":
-        return cmd_drafts(cfg, args)
-    return run_workflow(cfg, args)
+    try:
+        if args.command == "check":
+            return cmd_check(cfg, args)
+        if args.command == "init-sheets":
+            return cmd_init_sheets(cfg, args)
+        if args.command == "drafts":
+            return cmd_drafts(cfg, args)
+        return run_workflow(cfg, args)
+    except Exception:  # noqa: BLE001 - scheduled runs have no window to show this in, so log it
+        log.exception("'%s' stopped with an unexpected error", args.command)
+        return 1
+
+
+def _config_failure(message: str) -> None:
+    """Show a config problem, and log it: a scheduled run has no window to show it in."""
+    print(message, file=sys.stderr)
+    try:
+        log_dir = expand_path(DEFAULTS["data_dir"]) / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with open(log_dir / "agent.log", "a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} ERROR   {message}\n")
+    except OSError:
+        pass

@@ -94,6 +94,28 @@ def keep_awake():
             kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
 
 
+class SharedLogFile(logging.handlers.RotatingFileHandler):
+    """A rotating log several runs can write at once.
+
+    Windows can't rename a file another process has open, so rotating fails while scheduled runs
+    overlap, and the standard handler then drops every line. This one keeps appending instead and
+    rotates on a later run.
+    """
+
+    _stuck = False
+
+    def shouldRollover(self, record) -> bool:
+        return not self._stuck and bool(super().shouldRollover(record))
+
+    def doRollover(self) -> None:
+        try:
+            super().doRollover()
+        except OSError:
+            self._stuck = True
+            if self.stream is None:
+                self.stream = self._open()
+
+
 def setup_logging(log_dir: Path, verbose: bool = False) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     root = logging.getLogger("origincrest")
@@ -101,9 +123,7 @@ def setup_logging(log_dir: Path, verbose: bool = False) -> None:
         return
     root.setLevel(logging.DEBUG)
     fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%Y-%m-%d %H:%M:%S")
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_dir / "agent.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8"
-    )
+    file_handler = SharedLogFile(log_dir / "agent.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8")
     file_handler.setFormatter(fmt)
     file_handler.setLevel(logging.DEBUG)
     root.addHandler(file_handler)
