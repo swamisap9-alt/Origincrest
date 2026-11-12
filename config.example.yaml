@@ -16,6 +16,10 @@ workbooks:
     path: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest enquiries\Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx'
     default_kind: buyer        # rows here are coffee businesses unless their Category says logistics
 
+  suppliers:                   # Indonesian suppliers; created by the first `suppliers` run
+    path: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest suppliers\Indonesian_Coffee_Suppliers.xlsx'
+    default_kind: supplier
+
 tabs:
   ignore_tabs: []              # tabs the agent must never touch, e.g. ["Pricing"]
 
@@ -44,6 +48,28 @@ discovery:
   max_new_rows_per_segment: 6   # per category per region
   run_leads_after: true         # go straight on to workflow 2 for the new rows
 
+# Supplier search (every 3 days): Indonesian exporters, cooperatives and mills, each compared with your
+# current vendor, then a sourcing-enquiry draft for each. Follow-ups after followup.supplier_days.
+suppliers:
+  tab: New Suppliers - Indonesia
+  baseline_vendor:
+    name: PT Putra Pulau
+    # What you know about them: origins and grades, FOB prices quoted, minimum order, payment terms,
+    # certifications, how responsive they are. New suppliers are compared against this.
+    profile: ''
+  max_new_rows_per_run: 8
+  max_drafts_per_run: 8
+  min_fit_score_for_draft: 50
+  extra_focus: []               # more regions / supplier types to search, e.g. ['Kintamani natural-process lots']
+
+# What the supplier enquiries say about OriginCrest as a buyer. `demand` is used word for word; if it's
+# blank, drafts carry [placeholders] for the customer and the LCL / FCL quantities.
+sourcing:
+  intro: ''                     # e.g. 'OriginCrest is an Adelaide-based importer of Indonesian single-origin green coffee.'
+  demand: ''                    # e.g. 'Soho Roasters: LCL trial of ... kg of ..., then 1 x 20ft FCL (about ... t) every ...'
+  logistics: 'Sea freight, customs and biosecurity clearance and warehousing in Australia are already arranged.'
+  wanted: [Sumatra, Sulawesi, Java, Flores]
+
 # Workflow 2: drafts for the rows in the new-lead tabs.
 leads:
   extra_tabs: []                # other tabs whose rows should also get drafts
@@ -71,6 +97,7 @@ followup:
                  do not follow up, don't follow up]
   quote_days: 5
   lead_days: 10
+  supplier_days: 3             # follow up unanswered supplier enquiries after 3 days
   max_drafts_per_run: 15
   max_followups_per_contact: 3
 

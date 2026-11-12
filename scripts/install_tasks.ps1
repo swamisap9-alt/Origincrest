@@ -1,4 +1,4 @@
-# Registers the three workflows in Windows Task Scheduler (folder "OriginCrest").
+# Registers the workflows in Windows Task Scheduler (folder "OriginCrest").
 #   powershell -ExecutionPolicy Bypass -File scripts\install_tasks.ps1
 # Re-run any time to change times; -Force replaces the existing tasks.
 param(
@@ -7,7 +7,9 @@ param(
     [string]$LeadsStart = "07:00",
     [int]$LeadsEveryHours = 2,
     [string]$FollowupTime = "07:30",
-    [int]$DriveSyncEveryMinutes = 15
+    [int]$DriveSyncEveryMinutes = 15,
+    [string]$SuppliersTime = "06:00",
+    [int]$SuppliersEveryDays = 3
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -51,12 +53,16 @@ $sync.Repetition = (New-ScheduledTaskTrigger -Once -At "00:00" `
 Add-AgentTask "4 Drive sync" "drive-sync" $sync `
     "Every $DriveSyncEveryMinutes min: if any file in the OneDrive Origincrest folder changed, copy it to Google Drive (never deletes)."
 
+$suppliers = New-ScheduledTaskTrigger -Daily -DaysInterval $SuppliersEveryDays -At $SuppliersTime
+Add-AgentTask "5 Suppliers" "suppliers" $suppliers `
+    "Every $SuppliersEveryDays days: find Indonesian coffee suppliers, compare them with the current vendor, draft sourcing enquiries. Follow-ups after 3 days come from 3 Follow-up." $wakeSettings
+
 # Waking from sleep also needs "Allow wake timers" in the power plan. Turn it on for when the laptop is
 # plugged in only, so it never wakes up in a bag on battery.
 powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
 if ($LASTEXITCODE -eq 0) {
     powercfg /SETACTIVE SCHEME_CURRENT | Out-Null
-    Write-Host "Wake timers on (plugged in): 1 Discover and 3 Follow-up wake the laptop from sleep."
+    Write-Host "Wake timers on (plugged in): 1 Discover, 3 Follow-up and 5 Suppliers wake the laptop from sleep."
 } else {
     Write-Host "Couldn't turn on wake timers. Do it in Power Options > Change plan settings >"
     Write-Host "Change advanced power settings > Sleep > Allow wake timers > Plugged in: Enable."

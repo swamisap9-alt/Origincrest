@@ -47,6 +47,9 @@ def cmd_check(cfg, args) -> int:
         try:
             store = WorkbookStore(name, path, cfg).load()
         except FileNotFoundError:
+            if name == cfg.supplier_workbook:
+                print(f"[OK] {name}: will be created by the first `suppliers` run - {path}")
+                continue
             print(f"[X] {name}: not found - {path}")
             ok = False
             continue
@@ -75,7 +78,20 @@ def cmd_check(cfg, args) -> int:
                 print(f"        - {cat.label}  [{email}; from {cat.source}]{where}")
             ok &= bool(cats)
     from .config import expand_path
+    from .prompts import _filled
+    from .suppliers import run_focus
 
+    sc = cfg["suppliers"]
+    vendor = sc["baseline_vendor"]
+    print(f"Supplier search (every {sc['every_days']} days) -> tab '{sc['tab']}'; follow-ups after "
+          f"{cfg['followup']['supplier_days']} days")
+    print(f"     next search focus: {' | '.join(run_focus(cfg, today_in(cfg.tz)))}")
+    for label, value, hint in (
+            (f"compared with {vendor.get('name') or '(no vendor named)'}", vendor.get("profile"),
+             "suppliers.baseline_vendor.profile is blank - comparisons will be one-sided"),
+            ("demand in the enquiry emails", cfg["sourcing"].get("demand"),
+             "sourcing.demand is blank - drafts will carry [placeholders] for the LCL / FCL quantities")):
+        print(f"     [OK] {label}: {_filled(value)[:90]}" if _filled(value) else f"     [!] {hint}")
     ds = cfg["drive_sync"]
     for label, folder in (("OneDrive folder", ds["source"]), ("Google Drive folder", ds["destination"])):
         found = expand_path(folder).is_dir()
@@ -202,6 +218,12 @@ def run_workflow(cfg, args) -> int:
                 run_leads(ctx, max_drafts=args.max_drafts)
             elif args.command == "redraft":
                 run_leads(ctx, redraft=args.companies)
+            elif args.command == "suppliers":
+                from .suppliers import run_suppliers
+
+                run_suppliers(ctx, max_rows=args.max_rows, focus=[args.focus] if args.focus else None)
+                if not args.no_drafts:
+                    run_leads(ctx, max_drafts=args.max_drafts, only_kind="supplier")
             elif args.command == "followup":
                 run_followup(ctx, max_drafts=args.max_drafts)
             elif args.command == "drive-sync":
@@ -254,6 +276,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("redraft", help="write a new first draft for companies whose draft you deleted")
     p.add_argument("companies", nargs="+", help='company names as in the sheet, e.g. "Smith Channon" Pakval')
     p.add_argument("--dry-run", action="store_true", help="preview the drafts as .eml files only")
+    p = sub.add_parser("suppliers", help="find Indonesian coffee suppliers, compare them with your current "
+                                         "vendor and draft sourcing enquiries")
+    p.add_argument("--dry-run", action="store_true", help="search and report, but write nothing")
+    p.add_argument("--max-rows", type=int, help="cap on new suppliers for this run")
+    p.add_argument("--max-drafts", type=int)
+    p.add_argument("--focus", help='search this instead of the rotation, e.g. "Toraja exporters in Makassar"')
+    p.add_argument("--no-drafts", action="store_true", help="don't draft enquiries afterwards")
     p = sub.add_parser("followup", help="workflow 3: check replies and draft follow-ups")
     p.add_argument("--dry-run", action="store_true", help="check and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)

@@ -12,7 +12,8 @@ FREE_MAIL_DOMAINS = {
     "live.com", "live.com.au", "msn.com", "yahoo.com", "yahoo.com.au", "y7mail.com", "icloud.com", "me.com",
     "mac.com", "aol.com", "protonmail.com", "proton.me", "bigpond.com", "bigpond.net.au", "bigpond.com.au",
     "optusnet.com.au", "iinet.net.au", "tpg.com.au", "internode.on.net", "westnet.com.au", "dodo.com.au",
-    "adam.com.au", "ozemail.com.au", "zoho.com", "gmx.com", "mail.com",
+    "adam.com.au", "ozemail.com.au", "zoho.com", "gmx.com", "mail.com", "yahoo.co.id", "ymail.com",
+    "rocketmail.com",
 }
 
 # Sites that host many businesses: a link to them says nothing about which company it is.
@@ -32,11 +33,14 @@ _SECOND_LEVEL_SUFFIXES = {"com.au", "net.au", "org.au", "asn.au", "id.au", "edu.
                           "co.uk", "org.uk", "co.id", "com.sg", "com.my"}
 
 _LEGAL_WORDS = {"pty", "ltd", "limited", "proprietary", "inc", "llc", "co", "company", "corp", "corporation",
-                "holdings", "the", "and", "australia", "aust", "au", "group", "trading", "as", "t"}
+                "holdings", "the", "and", "australia", "aust", "au", "group", "trading", "as", "t",
+                # Indonesian company forms: "PT Putra Pulau" is "Putra Pulau"
+                "pt", "cv", "ud", "tbk", "persero"}
 _GENERIC_WORDS = {"coffee", "coffees", "roasters", "roaster", "roastery", "roasting", "roasted", "espresso",
                   "freight", "logistics", "forwarding", "forwarders", "international", "global", "services",
                   "transport", "shipping", "warehousing", "warehouse", "3pl", "customs", "brokers", "broker",
-                  "brokerage", "supply", "chain", "solutions", "specialty", "speciality", "beans", "cafe", "co"}
+                  "brokerage", "supply", "chain", "solutions", "specialty", "speciality", "beans", "cafe", "co",
+                  "kopi", "export", "exporter", "exporters"}
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 URL_RE = re.compile(r"(?:https?://|www\.)[^\s,;<>\"')]+", re.I)

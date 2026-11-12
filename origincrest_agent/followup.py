@@ -21,6 +21,7 @@ from .llm import AgentError
 from .mailer import MailInfo, build_message
 from .prompts import FOLLOWUP_SCHEMA, FOLLOWUP_SYSTEM, followup_prompt
 from .runtime import ChangeSet, RunContext, commit
+from .schema import SUPPLIER_PRIVATE
 from .utils import clean, fmt_date, log, to_date, to_int
 from .workbook import Row, WorkbookStore
 
@@ -32,7 +33,7 @@ def _utc(dt: datetime) -> datetime:
 
 
 def _record_type(row: Row) -> str:
-    return "lead" if row.kind == "buyer" else "quote"
+    return {"buyer": "lead", "supplier": "supplier"}.get(row.kind, "quote")
 
 
 def _local_date(info: MailInfo, fallback: date) -> date:
@@ -57,7 +58,7 @@ def _call_block(row: Row, *, step: int, days_since: int, last: date, rtype: str,
                 has_email: bool) -> str:
     who = ", ".join(x for x in (row.text("contact_name"), row.text("contact_role")) if x)
     phone = row.text("phone") or "(no phone number on the row - check their website)"
-    sent_what = "RFQ" if rtype == "quote" else "first email"
+    sent_what = {"quote": "RFQ", "supplier": "sourcing enquiry"}.get(rtype, "first email")
     lines = [
         "=" * 22 + " CALL FIRST " + "=" * 22,
         f"Your note: {row.text('user_notes')}",
@@ -88,9 +89,10 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
         except FileNotFoundError as exc:
             if name in fc["workbooks"]:
                 raise
-            report.add("Errors", str(exc))
+            if name != cfg.supplier_workbook:  # only exists after the first `suppliers` run
+                report.add("Errors", str(exc))
     open_statuses = {_norm(s) for s in fc["open_statuses"]}
-    awaiting_send = {_norm(cfg.status("intro_drafted")), _norm(cfg.status("rfq_drafted"))}
+    awaiting_send = {_norm(cfg.status(s)) for s in ("intro_drafted", "rfq_drafted", "supplier_drafted")}
     call_phrases, done_phrases = fc.get("call_phrases") or [], fc.get("done_phrases") or []
     groups: dict[str, list[Row]] = {}
     for store in stores.values():
@@ -128,7 +130,7 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             row = rows[0]
             company = row.text("company") or "(no company name)"
             rtype = _record_type(row)
-            days = fc["lead_days"] if rtype == "lead" else fc["quote_days"]
+            days = fc[f"{rtype}_days"]
             label = f"{company} [{rtype}, {row.sheet.title}]"
             match = EMAIL_RE.search(row.text("email"))
             email = norm_email(match.group(0)) if match else ""
@@ -255,7 +257,9 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             try:
                 draft = ctx.agent.structured(
                     system=FOLLOWUP_SYSTEM,
-                    prompt=followup_prompt(record_type=rtype, number=step, row_context=row.email_context(),
+                    prompt=followup_prompt(record_type=rtype, number=step,
+                                           row_context=row.email_context(
+                                               skip=SUPPLIER_PRIVATE if rtype == "supplier" else ()),
                                            original=(last_sent.text[:1500] if last_sent else ""),
                                            days_since=overdue, threaded=threaded, cfg=cfg, call=call,
                                            has_email=bool(email)),
