@@ -36,23 +36,33 @@ from .workbook import HEADER_FILL, Row, WorkbookStore
 
 AGENT_NAME = "OriginCrest Agent"
 
-# What each run concentrates on. Two per run by default, so the whole list comes round about every month.
+# What each run concentrates on: every Indonesian origin and species, two themes per run by default, so
+# the whole list comes round about every four weeks (one run every 3 days).
 FOCUS = (
-    "Aceh Gayo arabica: cooperatives and exporters in Takengon, Bener Meriah and Gayo Lues",
-    "North Sumatra arabica: Mandheling, Lintong, Sidikalang and Simalungun exporters shipping from Medan / Belawan",
-    "Sulawesi arabica: Toraja, Enrekang and Mamasa exporters and mills shipping from Makassar",
-    "Java arabica: West Java (Preanger, Garut, Pangalengan) and East Java (Ijen, Bondowoso) exporters shipping "
-    "from Jakarta or Surabaya",
-    "Flores (Bajawa, Manggarai) and Bali Kintamani cooperatives and exporters",
+    "West Java: Preanger arabica, fully washed and natural (Bandung, Garut, Pangalengan, Ciwidey), and West "
+    "Java robusta (Garut): exporters and processors shipping from Jakarta",
+    "East Java, Malang: Gunung Kawi arabica (natural and washed) and Dampit robusta (Grade 1 and commercial "
+    "grades): exporters and processors shipping from Surabaya",
+    "Central Java: Temanggung robusta (Grade 1 and fine robusta) and Sindoro-Sumbing arabica: exporters "
+    "shipping from Semarang",
+    "Aceh Gayo arabica (and Gayo robusta): cooperatives and exporters in Takengon, Bener Meriah and Gayo Lues",
+    "North Sumatra: Mandheling, Lintong and Simalungun arabica and Sidikalang robusta, exporters shipping "
+    "from Medan / Belawan",
+    "Sulawesi arabica: Toraja, Enrekang (Kalosi) and Mamasa exporters and mills shipping from Makassar",
+    "East Java Ijen / Bondowoso arabica and Jember / Banyuwangi robusta exporters",
+    "Lampung and South Sumatra robusta exporters: Grade 1 to commercial grades and specialty fine robusta",
+    "Flores (Bajawa, Manggarai) arabica and robusta, Bali Kintamani arabica and Bali Pupuan robusta: "
+    "cooperatives and exporters",
+    "Kerinci (Jambi), Solok (West Sumatra) and Bengkulu arabica and robusta exporters",
+    "Liberica and excelsa: Jambi, Riau (Meranti), West Kalimantan and Bengkulu growers and exporters",
+    "Papua (Wamena, Baliem), Sumbawa, Timor and other less-known origins with licensed exporters",
+    "Specialty micro-lot processors anywhere in Indonesia: natural, honey, anaerobic and wine-process lots",
     "Producer cooperatives with their own export licence and Organic, Fairtrade or Rainforest Alliance certification",
     "Established Indonesian export houses and members of the exporter associations AEKI and GAEKI",
     "Indonesian exhibitors of green coffee at trade shows: Trade Expo Indonesia, World of Coffee Jakarta, "
     "MICE (Melbourne International Coffee Expo), SCAJ",
-    "Kerinci (Jambi), Solok (West Sumatra) and Bengkulu specialty arabica exporters",
     "Indonesian exporters that already ship green coffee to Australia or New Zealand, and those that offer "
     "part-container (LCL) or mixed-lot shipments for small importers",
-    "Fine robusta and specialty-grade robusta exporters: Lampung, South Sumatra, Temanggung and Flores",
-    "Papua (Wamena, Baliem), Sumbawa and other less-known origins with licensed exporters",
 )
 
 

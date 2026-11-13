@@ -16,8 +16,10 @@ SUPPLIER_CONTACT_RULES = CONTACT_RULES + """
 
 SUPPLIER_SYSTEM = f"""\
 You find Indonesian green-coffee suppliers for OriginCrest, an Australian importer that buys Indonesian \
-single-origin green coffee and sells it to Australian roasters. OriginCrest is the buyer here. Search the \
-web, then record what you found with the record_suppliers tool.
+single-origin green coffee and sells it to Australian roasters. OriginCrest is the buyer here. It is building \
+a broad supplier base across Indonesia: every species (arabica, robusta, liberica, excelsa), every grade \
+(specialty, Grade 1 and commercial grades) and every process. Search the web, then record what you found \
+with the record_suppliers tool.
 
 Who qualifies: businesses in Indonesia that can export green (unroasted) coffee themselves - licensed \
 exporters, producer cooperatives with their own export licence, mills and processors that export, and \
@@ -43,14 +45,15 @@ or three sentences comparing it with that vendor on the points the evidence supp
 certifications, export scale and minimums, how reachable and transparent they are, Australia experience), \
 and say plainly what can't be compared because it isn't known. Never invent facts about either side.
 
-Current demand: when the request gives OriginCrest's current demand (specific coffees for a customer), set \
-covers_current_demand to "Yes" if the supplier's own pages show they sell those coffees (same area, \
-species, grade and process, or a stated close match), "Partly" if they sell some of them, "No" if none, \
-and "No demand given" when the request has no demand.
+Current demand: the request may give OriginCrest's current customer order. It is for reference only: never \
+leave a supplier out, or score it lower, because it doesn't sell those coffees. Just record \
+covers_current_demand: "Yes" if the supplier's own pages show they sell those coffees (same area, species, \
+grade and process, or a stated close match), "Partly" if some of them, "No" if none, and "No demand given" \
+when the request has no demand.
 
-Fit score 0-100 for OriginCrest's needs:
-- Sells the coffees in the current demand (or, failing that, the origins OriginCrest wants), specialty or \
-export grade, with traceable lots (up to 30)
+Fit score 0-100, as a supplier to OriginCrest in general (not to the current order):
+- Range and quality: Indonesian coffee of any species, with clear grades and processes and traceable lots; \
+specialty lots are a plus (up to 30)
 - Proven export capability: licence, documents, shipments abroad, ideally to Australia (up to 30)
 - Can start small (samples, part-container) and scale to full containers (up to 20)
 - Reachable and transparent: named contacts, published business email or WhatsApp, an active site (up to 20)
@@ -108,6 +111,9 @@ def sourcing_text(cfg, for_search: bool = False) -> str:
     wanted = [w for w in (_filled(x) for x in s.get("wanted") or []) if w]
     if wanted:
         lines.append("Origins wanted: " + ", ".join(wanted))
+    experience = _filled(s.get("experience"))
+    if experience and not for_search:
+        lines.append(f"Experience: {experience}")
     demand = _filled(s.get("demand"))
     if demand:
         lines.append(f"Current demand: {demand}")
@@ -148,25 +154,23 @@ coffee, to Indonesian exporters, cooperatives and mills. OriginCrest is the buye
 for one supplier, from its row in OriginCrest's supplier spreadsheet.
 
 Structure, in this order:
-1. One or two sentences introducing OriginCrest and why this supplier (name a specific origin, process or \
+1. The pitch: introduce OriginCrest and its experience (from "About" and "Experience" in the background), \
+in two or three sentences, and say why this supplier (name a specific coffee, origin, process or \
 certification of theirs from the row).
 2. Readiness: OriginCrest is ready to import into Australia now, and the logistics side (as given in the \
 background) is already arranged, so the supplier only needs to deliver to the agreed incoterm.
-3. The demand - depending on the row's "Covers current demand":
-   - "Yes", "Partly", blank or missing: the current demand, stated concretely from the background (the \
-customer, the LCL trial order and the FCL requirement that follows); for "Partly", only the coffees this \
-supplier sells. A short list is fine here.
-   - "No": this supplier doesn't sell the coffees in the current order, so don't ask them to supply it or \
-list its coffees. Instead say OriginCrest imports for Australian roasters, starting with part-container \
-(LCL) lots and moving to full 20 ft containers as demand grows, and that it is interested in their own \
-coffees (from the row). Don't name the customer.
-4. What OriginCrest asks for, as a short list (for "No": about their own coffees), and one easy next step \
-(a reply, or a call on WhatsApp).
+3. The current demand - the heart of the email, for every supplier: the customer, the LCL trial order and \
+the FCL step that follows, stated concretely from the background. A short list is fine here. If the row \
+shows the supplier doesn't list those exact coffees ("Covers current demand" is "No" or "Partly"), ask \
+whether they can supply them or their closest equivalents from their own range.
+4. Ask for their quotation: the points in "What to ask the supplier for", as a short list, covering the \
+coffees in the order (or their equivalents) and the supplier's own range. Then one easy next step (a reply \
+with the quote, or a call on WhatsApp).
 
 Use the demand exactly as given. If a number, customer or date isn't given, write a clearly marked \
 placeholder in square brackets for OriginCrest to fill in before sending, e.g. [LCL trial quantity in kg]. \
-Never invent volumes, prices, dates or certifications. Never mention any other supplier or vendor, or that \
-OriginCrest is comparing suppliers.
+Never invent volumes, prices, dates or certifications. Never mention any other supplier or vendor, prices \
+OriginCrest has been offered, or that OriginCrest is comparing suppliers.
 
 Plain text, clear international business English (many readers use English as a second language): short \
 sentences, no idioms, no hype, 170-300 words (more only if the demand needs it). Use the contact's name if the row has one, otherwise \
@@ -194,9 +198,9 @@ and hasn't heard back.
 
 Restate in one or two lines who OriginCrest is and the order it wants to place (the trial by \
 part-container (LCL) and the full-container (FCL) step after it, from the background and the original \
-email), repeat the one thing OriginCrest most needs (FOB price and minimum order, or samples), and offer a \
-WhatsApp or video call as an alternative to email. If the row's "Covers current demand" is "No", restate \
-OriginCrest's interest in the supplier's own coffees instead of the customer's order. Use short sentences and plain international English \
+email), ask again for their quotation (FOB price per kg for the coffees in the order or their closest \
+equivalents, their minimum order, and their offer list), and offer a WhatsApp or video call as an \
+alternative to email. Use short sentences and plain international English \
 (many readers use English as a second language). Never mention other suppliers or vendors.
 
 Plain text, 50-120 words; later follow-ups are shorter. Use only facts in the row details, the original \

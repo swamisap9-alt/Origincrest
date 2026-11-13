@@ -25,16 +25,20 @@ suppliers:
   max_new_rows_per_run: 8
   max_drafts_per_run: 8
   min_fit_score_for_draft: 50
-  priority_focus: []            # searched first, one per run, e.g. ['Robusta Grade 1 natural from Dampit, Surabaya']
+  # The rotation covers every Indonesian origin and species (see FOCUS in suppliers.py). To search one
+  # thing on every run until you remove it, list it here, e.g. ['Robusta Grade 1 natural from Dampit, Surabaya'].
+  priority_focus: []
   extra_focus: []               # more regions / supplier types for the rotation
 
-# What the enquiries say about OriginCrest as a buyer. `demand` is used word for word; left blank,
-# drafts carry [placeholders] for the customer and the LCL / FCL quantities.
+# What the enquiries say about OriginCrest as a buyer. Every enquiry pitches `intro` and `experience`,
+# leads with `demand` (used word for word) and asks the supplier for its quotation. The demand never filters
+# suppliers. Left blank, drafts carry [placeholders] for the customer and the LCL / FCL quantities.
 sourcing:
   intro: ''                     # e.g. 'OriginCrest Pty Ltd is an Adelaide-based importer of Indonesian green coffee.'
+  experience: ''                # facts only, e.g. which coffees you already price, quote or import, and for whom
   demand: ''                    # e.g. '<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL (about 18 t)'
   logistics: 'Sea freight, customs and biosecurity clearance and warehousing in Australia are already arranged.'
-  wanted: [Sumatra, Sulawesi, Java, Flores]
+  wanted: ['all Indonesian origins: arabica, robusta and liberica, specialty to commercial grades']
 
 # The supplier agent's own follow-ups (config.yaml's followup section is not used here).
 followup:

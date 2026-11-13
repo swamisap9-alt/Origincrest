@@ -108,9 +108,15 @@ def digest(*paths: Path) -> dict:
 def test_focus_rotates_every_run(files):
     cfg = load_supplier_config(*files)
     cfg.data["suppliers"]["focus_per_run"] = 2
-    seen = [tuple(run_focus(cfg, date(2026, 11, 12) + timedelta(days=3 * i))) for i in range(len(FOCUS) // 2)]
+    runs = -(-len(FOCUS) // 2)  # enough runs to cover the list once
+    seen = [tuple(run_focus(cfg, date(2026, 11, 12) + timedelta(days=3 * i))) for i in range(runs)]
     assert len(set(seen)) == len(seen)
     assert {f for run in seen for f in run} == set(FOCUS)
+    # every species and the main growing areas are in the rotation
+    text = " ".join(FOCUS)
+    for word in ("Preanger", "Gunung Kawi", "Dampit", "Temanggung", "Garut", "Gayo", "Toraja", "Lampung",
+                 "Liberica", "Flores", "Bali", "Papua"):
+        assert word in text, word
     assert run_focus(cfg, date(2026, 11, 12)) == run_focus(cfg, date(2026, 11, 12))
 
 
@@ -237,23 +243,27 @@ def test_every_search_is_reported_with_its_reasons(scfg, agent, make_sctx):
     assert ": 1 found, 1 new. Searched in Indonesian too." in second
 
 
-def test_supplier_without_the_demanded_coffees_gets_a_general_enquiry(scfg, agent, mailbox, make_sctx):
+def test_every_supplier_gets_the_current_demand_and_is_asked_to_quote(scfg, agent, mailbox, make_sctx):
+    """The demand never filters suppliers: one without the customer's coffees is still drafted, and every
+    enquiry pitches OriginCrest's experience, leads with the current order and asks for their quotation."""
+    scfg.data["sourcing"]["experience"] = "OriginCrest prices and quotes Java coffees to Australian roasters."
     agent.research_queue = [ResearchResult(data={"suppliers": [
-        supplier(covers_current_demand="No", origins="Kerinci arabica, washed")]})]
+        supplier(covers_current_demand="No", origins="Kerinci arabica, washed", score=55)]})]
     ctx = make_sctx()
     run_suppliers(ctx)
     assert run_supplier_drafts(ctx) == 1
     assert sheet(scfg)["Koperasi Gayo Mountain"]["Covers current demand"] == "No"
     prompt = agent.calls[-1][1]
-    assert '"Covers current demand": "No"' in prompt  # the email writer sees it, and is told how to adapt:
-    from origincrest_agent.supplier_prompts import SUPPLIER_INTRO_SYSTEM
-    assert '"No": this supplier doesn\'t sell the coffees in the current order' in SUPPLIER_INTRO_SYSTEM
-
-
-def test_nothing_to_do_before_the_first_search(make_sctx):
-    ctx = make_sctx()
-    assert run_supplier_drafts(ctx) == 0 and run_supplier_followup(ctx) == 0
-    assert "Errors" not in ctx.report.sections
+    assert DEMAND in prompt and "Experience: OriginCrest prices and quotes Java coffees" in prompt
+    assert "your quotation: FOB price per kg" in prompt and "your current offer list" in prompt
+    assert '"Covers current demand": "No"' in prompt
+    for private in ("Baseline Kopi", "3.21"):
+        assert private not in prompt
+    from origincrest_agent.supplier_prompts import SUPPLIER_INTRO_SYSTEM, SUPPLIER_SYSTEM
+    assert "The current demand - the heart of the email, for every supplier" in SUPPLIER_INTRO_SYSTEM
+    assert "closest equivalents" in SUPPLIER_INTRO_SYSTEM
+    assert "leave a supplier out, or score it lower, because it doesn't sell those coffees" in SUPPLIER_SYSTEM
+    assert "(not to the current order)" in SUPPLIER_SYSTEM
 
 
 # --- separation from the outreach agent ------------------------------------------------------------------

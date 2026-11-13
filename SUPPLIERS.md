@@ -42,10 +42,11 @@ agent writes settings files). To use different values for the supplier agent, pu
 2. Fill in `config.suppliers.yaml`:
    - `suppliers.baseline_vendor`: your current vendor's name and what you know about them (`profile`).
      Every new supplier is compared with it. It is never put in an email.
+   - `sourcing.experience`: OriginCrest's experience, for the pitch in every enquiry (facts only).
    - `sourcing.demand`: the order you need supplied (the trial by LCL, then the FCL step), word for word as it
      should appear in the enquiries. Left blank, drafts carry `[placeholders]`.
-   - `suppliers.priority_focus` (optional): searches for what you need now, e.g. the coffees in a customer's
-     quote. One is searched every run until you remove them.
+   - `suppliers.priority_focus` (optional): something to search on every run until you remove it. Usually
+     left empty: the rotation already covers every origin.
 3. Check, then try it with Excel closed:
    ```powershell
    scripts\suppliers.cmd check
@@ -72,9 +73,16 @@ Open ─(followup, no reply after 3 days)─► follow-up draft, Last contacted 
 Open ─(reply found)─────────────────────► Replied - review
 ```
 
-- **Covers current demand** (Yes / Partly / No) says whether the supplier sells the coffees in
-  `sourcing.demand`. Yes or Partly: the enquiry describes that order. No: the enquiry introduces OriginCrest and
-  asks about the supplier's own coffees instead, without naming your customer.
+- **What gets searched:** every Indonesian origin and species (arabica, robusta, liberica, excelsa), every
+  grade, from West Java, Malang (Gunung Kawi, Dampit) and Temanggung to Gayo, Toraja, Lampung, Flores, Bali and
+  Papua, plus cooperatives, export houses and trade-show exhibitors. Your demand never filters suppliers and
+  doesn't affect the fit score, which rates a supplier in general (range, export record, small start, reachability).
+- **Every enquiry** pitches OriginCrest (`sourcing.intro` and `sourcing.experience`), leads with the current
+  demand (`sourcing.demand`) and asks the supplier for its quotation: FOB per kg for the coffees in the order
+  (or its closest equivalents) for the LCL trial and a 20 ft FCL, plus its offer list for its other coffees.
+- **Covers current demand** (Yes / Partly / No) is for your information: whether the supplier lists the
+  coffees in `sourcing.demand`. For No or Partly, the enquiry also asks whether they can supply those coffees
+  or their closest equivalents.
 - **Searches** (top of the run report) lists each search with how many suppliers it found and why candidates
   were left out, so an empty search is never silent. Searches run in Indonesian as well as English, and the
   Ministry of Trade's exporter directory (InaExport) counts as a source.

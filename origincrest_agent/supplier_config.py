@@ -61,16 +61,19 @@ SUPPLIER_DEFAULTS: dict[str, Any] = {
     # the agent never invents volumes, prices or dates.
     "sourcing": {
         "intro": "",
+        "experience": "",   # OriginCrest's experience, for the pitch (facts only; used word for word)
         "demand": "",
         "logistics": ("Sea freight, customs and biosecurity clearance and warehousing in Australia are "
                       "already arranged."),
-        "wanted": ["Sumatra", "Sulawesi", "Java", "Flores"],
-        "ask": ["FOB price per kg at your loading port, for the trial (LCL) quantity and for a 20ft FCL",
-                "whether that price includes export documents and charges (PEB, phytosanitary certificate, "
+        "wanted": ["all Indonesian origins: arabica, robusta and liberica, specialty to commercial grades"],
+        "ask": ["your quotation: FOB price per kg at your loading port for the coffees in our current order (or "
+                "your closest equivalents), for the trial (LCL) quantity and for a 20 ft FCL",
+                "your current offer list with FOB prices for your other coffees (grade, process, moisture, crop)",
+                "whether your prices include export documents and charges (PEB, phytosanitary certificate, "
                 "fumigation, ICO certificate / certificate of origin)",
                 "your minimum order, and whether you can prepare a part-container (LCL) shipment",
                 "preparation time after deposit, and your loading port",
-                "green samples for approval before shipment", "payment terms"],
+                "green samples for approval before shipment, and payment terms"],
     },
     # The supplier agent's own follow-up settings (config.yaml's followup section is not used).
     "followup": {
