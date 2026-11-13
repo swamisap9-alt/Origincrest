@@ -41,6 +41,7 @@ def supplier(name="Koperasi Gayo Mountain", email="export@gayomountain.co.id", s
             "whatsapp": "+62 812 5550 0102", "city": "Takengon", "province": "Aceh",
             "origins": "Gayo arabica G1, wet-hulled and washed", "certifications": "Organic, Fairtrade",
             "export_capability": "Exports FCL from Belawan; LCL on request; samples by courier",
+            "covers_current_demand": "Yes",
             "comparison_with_current_vendor": "Certified and publishes export contacts; prices not public.",
             "fit_score": score, "fit_rationale": "Certified Gayo lots with an export licence.",
             "suggested_approach": "Email the export desk, then WhatsApp the published number.",
@@ -216,8 +217,37 @@ def test_dry_run_writes_nothing(scfg, agent, mailbox, make_sctx):
     agent.research_queue = [ResearchResult(data={"suppliers": [supplier()]})]
     ctx = make_sctx(dry_run=True)
     assert run_suppliers(ctx) == 1
+    assert run_supplier_drafts(ctx) == 0
     assert not scfg.workbook_path("suppliers").exists() and not mailbox.drafts
     assert "Koperasi Gayo Mountain" in ctx.report.sections["Would add"][0]
+    assert "covers current demand: Yes" in ctx.report.sections["Would add"][0]
+    assert "isn't created in a dry run" in ctx.report.sections["Nothing to draft"][0]
+
+
+def test_every_search_is_reported_with_its_reasons(scfg, agent, make_sctx):
+    scfg.data["suppliers"].update(priority_focus=["Dampit robusta G1 natural exporters"], focus_per_run=2)
+    agent.research_queue = [
+        ResearchResult(data={"suppliers": [], "search_notes": "Only marketplace listings, no identifiable exporter."}),
+        ResearchResult(data={"suppliers": [supplier()], "search_notes": "Searched in Indonesian too."}),
+    ]
+    ctx = make_sctx(dry_run=True)
+    assert run_suppliers(ctx) == 1
+    first, second = ctx.report.sections["Searches"]
+    assert first.startswith("Dampit robusta G1 natural exporters: 0 found, 0 new. Only marketplace listings")
+    assert ": 1 found, 1 new. Searched in Indonesian too." in second
+
+
+def test_supplier_without_the_demanded_coffees_gets_a_general_enquiry(scfg, agent, mailbox, make_sctx):
+    agent.research_queue = [ResearchResult(data={"suppliers": [
+        supplier(covers_current_demand="No", origins="Kerinci arabica, washed")]})]
+    ctx = make_sctx()
+    run_suppliers(ctx)
+    assert run_supplier_drafts(ctx) == 1
+    assert sheet(scfg)["Koperasi Gayo Mountain"]["Covers current demand"] == "No"
+    prompt = agent.calls[-1][1]
+    assert '"Covers current demand": "No"' in prompt  # the email writer sees it, and is told how to adapt:
+    from origincrest_agent.supplier_prompts import SUPPLIER_INTRO_SYSTEM
+    assert '"No": this supplier doesn\'t sell the coffees in the current order' in SUPPLIER_INTRO_SYSTEM
 
 
 def test_nothing_to_do_before_the_first_search(make_sctx):

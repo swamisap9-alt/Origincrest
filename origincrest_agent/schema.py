@@ -123,6 +123,7 @@ FIELDS: list[Field] = [
     Field("origins", "Origins / coffees", (), width=36),
     Field("certifications", "Supplier certifications", (), width=22),
     Field("export_terms", "Export capability", (), width=40),
+    Field("demand_match", "Covers current demand", (), width=14),
     Field("comparison", "Comparison with current vendor", (), width=50),
     Field("approach", "Suggested approach", (), width=44),
     Field("draft_created", "Draft created", (
@@ -154,7 +155,7 @@ NEW_TAB_KEYS = {
                                 "draft_created", "draft_subject", "agent_notes"],
     # Indonesian suppliers: "State" holds the province.
     "supplier": ["company", "category", "contact_name", "contact_role", "email", "phone", "website", "city",
-                 "state", "origins", "services", "certifications", "export_terms", "fit_score", "comparison",
+                 "state", "origins", "services", "certifications", "export_terms", "demand_match", "fit_score", "comparison",
                  "fit_rationale", "approach", "talking_points", "source_url", "status", "date_added", "added_by",
                  "record_type", "last_contacted", "next_action_date", "last_reply", "followup_count",
                  "draft_created", "draft_subject", "agent_notes"],

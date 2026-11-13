@@ -72,6 +72,12 @@ Open ─(followup, no reply after 3 days)─► follow-up draft, Last contacted 
 Open ─(reply found)─────────────────────► Replied - review
 ```
 
+- **Covers current demand** (Yes / Partly / No) says whether the supplier sells the coffees in
+  `sourcing.demand`. Yes or Partly: the enquiry describes that order. No: the enquiry introduces OriginCrest and
+  asks about the supplier's own coffees instead, without naming your customer.
+- **Searches** (top of the run report) lists each search with how many suppliers it found and why candidates
+  were left out, so an empty search is never silent. Searches run in Indonesian as well as English, and the
+  Ministry of Trade's exporter directory (InaExport) counts as a source.
 - **Private columns:** `Comparison with current vendor`, `Suggested approach` and `Fit rationale` are for you.
   The email writer never sees them, and enquiries never mention another supplier or your vendor.
 - **Contact details** are kept only if they appear on the supplier's own pages; anything dropped is explained

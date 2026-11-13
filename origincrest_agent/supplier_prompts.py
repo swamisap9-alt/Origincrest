@@ -24,7 +24,14 @@ exporters, producer cooperatives with their own export licence, mills and proces
 established trading houses. They must appear to be operating now. Leave out roasted-coffee brands and \
 cafes, brokers and importers based outside Indonesia, marketplace listings with no identifiable company \
 (Alibaba, IndoTrading and similar pages are leads to a company, never the source for one), and farms \
-that sell only through someone else's export licence.
+that sell only through someone else's export licence. The Indonesian Ministry of Trade's exporter \
+directory (InaExport) and exporter-association member lists (AEKI, GAEKI) are good sources: a company \
+listed there counts as identified, and contact details published there count as published.
+
+How to search: search in Indonesian as well as English - many exporters and cooperatives only publish in \
+Indonesian (e.g. "eksportir kopi robusta Dampit", "koperasi kopi Temanggung ekspor", "green bean kopi \
+arabika Preanger ekspor"). When the focus names a specific coffee or area, look for the processors, \
+cooperatives and exporters in that exact area first, then exporters elsewhere who sell that coffee.
 
 Evidence to look for and record: origins and growing regions, species, grades and processing methods; \
 certifications (Organic, Fairtrade, Rainforest Alliance, 4C, SCA scores); export track record, loading \
@@ -36,8 +43,14 @@ or three sentences comparing it with that vendor on the points the evidence supp
 certifications, export scale and minimums, how reachable and transparent they are, Australia experience), \
 and say plainly what can't be compared because it isn't known. Never invent facts about either side.
 
+Current demand: when the request gives OriginCrest's current demand (specific coffees for a customer), set \
+covers_current_demand to "Yes" if the supplier's own pages show they sell those coffees (same area, \
+species, grade and process, or a stated close match), "Partly" if they sell some of them, "No" if none, \
+and "No demand given" when the request has no demand.
+
 Fit score 0-100 for OriginCrest's needs:
-- Sells the origins OriginCrest wants, specialty grade, with traceable lots (up to 30)
+- Sells the coffees in the current demand (or, failing that, the origins OriginCrest wants), specialty or \
+export grade, with traceable lots (up to 30)
 - Proven export capability: licence, documents, shipments abroad, ideally to Australia (up to 30)
 - Can start small (samples, part-container) and scale to full containers (up to 20)
 - Reachable and transparent: named contacts, published business email or WhatsApp, an active site (up to 20)
@@ -67,6 +80,7 @@ SUPPLIER_SCHEMA = obj({
     "certifications": {"type": "string", "description": "Certifications stated on their pages, or 'Not stated'"},
     "export_capability": {"type": "string", "description": "Export track record, port, minimum order, LCL/FCL, "
                                                            "samples, incoterms, Australia experience"},
+    "covers_current_demand": {"type": "string", "enum": ["Yes", "Partly", "No", "No demand given"]},
     "comparison_with_current_vendor": {"type": "string"},
     "fit_score": {"type": "integer"},
     "fit_rationale": {"type": "string", "description": "One or two sentences"},
@@ -78,7 +92,10 @@ SUPPLIER_SCHEMA = obj({
 RECORD_SUPPLIERS = strict_tool(
     "record_suppliers",
     "Record the suppliers you found. Call once, after you've finished searching.",
-    obj({"suppliers": {"type": "array", "items": SUPPLIER_SCHEMA}}),
+    obj({"suppliers": {"type": "array", "items": SUPPLIER_SCHEMA},
+         "search_notes": {"type": "string", "description": (
+             "Two or three sentences: what you searched (including Indonesian-language searches) and which "
+             "candidates you left out and why. Most important when you record few or none.")}}),
 )
 
 
@@ -135,9 +152,16 @@ Structure, in this order:
 certification of theirs from the row).
 2. Readiness: OriginCrest is ready to import into Australia now, and the logistics side (as given in the \
 background) is already arranged, so the supplier only needs to deliver to the agreed incoterm.
-3. The demand, stated concretely from the background: the customer, the LCL trial order and the FCL \
-requirement that follows. A short list is fine here.
-4. What OriginCrest asks for, as a short list, and one easy next step (a reply, or a call on WhatsApp).
+3. The demand - depending on the row's "Covers current demand":
+   - "Yes", "Partly", blank or missing: the current demand, stated concretely from the background (the \
+customer, the LCL trial order and the FCL requirement that follows); for "Partly", only the coffees this \
+supplier sells. A short list is fine here.
+   - "No": this supplier doesn't sell the coffees in the current order, so don't ask them to supply it or \
+list its coffees. Instead say OriginCrest imports for Australian roasters, starting with part-container \
+(LCL) lots and moving to full 20 ft containers as demand grows, and that it is interested in their own \
+coffees (from the row). Don't name the customer.
+4. What OriginCrest asks for, as a short list (for "No": about their own coffees), and one easy next step \
+(a reply, or a call on WhatsApp).
 
 Use the demand exactly as given. If a number, customer or date isn't given, write a clearly marked \
 placeholder in square brackets for OriginCrest to fill in before sending, e.g. [LCL trial quantity in kg]. \
@@ -171,7 +195,8 @@ and hasn't heard back.
 Restate in one or two lines who OriginCrest is and the order it wants to place (the trial by \
 part-container (LCL) and the full-container (FCL) step after it, from the background and the original \
 email), repeat the one thing OriginCrest most needs (FOB price and minimum order, or samples), and offer a \
-WhatsApp or video call as an alternative to email. Use short sentences and plain international English \
+WhatsApp or video call as an alternative to email. If the row's "Covers current demand" is "No", restate \
+OriginCrest's interest in the supplier's own coffees instead of the customer's order. Use short sentences and plain international English \
 (many readers use English as a second language). Never mention other suppliers or vendors.
 
 Plain text, 50-120 words; later follow-ups are shorter. Use only facts in the row details, the original \

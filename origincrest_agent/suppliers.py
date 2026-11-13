@@ -171,6 +171,7 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
             report.add("Errors", f"{theme}: {exc}")
             continue
         candidates = sorted(result.data.get("suppliers", []), key=lambda c: -int(c.get("fit_score") or 0))
+        added_before = added
         for i, cand in enumerate(candidates):
             company = clean(cand.get("company_name"))
             if not company:
@@ -211,6 +212,7 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
                 "origins": clean(cand.get("origins")),
                 "certifications": clean(cand.get("certifications")),
                 "export_terms": clean(cand.get("export_capability")),
+                "demand_match": clean(cand.get("covers_current_demand")),
                 "fit_score": score,
                 "comparison": clean(cand.get("comparison_with_current_vendor")),
                 "fit_rationale": clean(cand.get("fit_rationale")),
@@ -223,8 +225,10 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
                 "agent_notes": "; ".join(notes),
             }
             index.add(f"this run ({tab})", dedupe_name(company), website, check.email, check.phone or whatsapp)
-            line = (f"{company} [{values['category']}, {values['city'] or '?'}] fit {score}/100 - "
-                    f"{check.email or 'no verified email'}{' - ' + values['phone'] if values['phone'] else ''}")
+            why = f" ({'; '.join(check.notes)})" if check.notes and not check.email else ""
+            line = (f"{company} [{values['category']}, {values['city'] or '?'}] fit {score}/100, covers "
+                    f"current demand: {values['demand_match'] or '?'} - {check.email or 'no verified email'}"
+                    f"{why}{' - ' + values['phone'] if values['phone'] else ''}")
             if ctx.dry_run:
                 report.add("Would add", line)
                 if values["comparison"]:
@@ -240,6 +244,9 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
                 report.add("Suggested approach", f"{company}: {values['approach']}")
             report.count("new suppliers")
             added += 1
+        search_notes = clean(result.data.get("search_notes"))
+        report.add("Searches", f"{theme}: {len(candidates)} found, {added - added_before} new"
+                               + (f". {search_notes}" if search_notes else ""))
 
     commit(ctx, ChangeSet())
     return added
@@ -287,7 +294,12 @@ def run_supplier_drafts(ctx: RunContext, max_drafts: int | None = None, redraft:
     companies again). Returns how many drafts were saved."""
     store = _store(ctx)
     if store is None:
-        ctx.report.add("Nothing to draft", f"No supplier workbook yet ({ctx.cfg.workbook_path(WORKBOOK)})")
+        if ctx.dry_run:
+            ctx.report.add("Nothing to draft", "Dry run: the supplier workbook isn't created in a dry run, so there "
+                                               "are no enquiries to preview. Without --dry-run, enquiries are saved "
+                                               "to your Drafts folder (nothing is sent).")
+        else:
+            ctx.report.add("Nothing to draft", f"No supplier workbook yet ({ctx.cfg.workbook_path(WORKBOOK)})")
         return 0
     stores = {WORKBOOK: store}
     groups = _candidates(ctx, stores, redraft, only_kind="supplier")
