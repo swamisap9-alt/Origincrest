@@ -119,16 +119,12 @@ FIELDS: list[Field] = [
     Field("fit_rationale", "Fit rationale", ("fit rationale", "fit notes", "why fit"), width=48),
     Field("researched_on", "Researched on", ("researched on", "research date"), width=12, is_date=True),
     # Supplier discovery (Indonesian exporters, cooperatives, mills).
-    Field("origins", "Origins / coffees", ("origins coffees", "origins", "coffees offered", "origin regions"),
-          width=36),
-    Field("certifications", "Certifications", ("certifications", "certification", "certified"), width=22),
-    Field("export_terms", "Export capability", (
-        "export capability", "export terms", "moq", "export experience",
-    ), width=40),
-    Field("comparison", "Comparison with current vendor", (
-        "comparison with current vendor", "comparison", "vs current vendor",
-    ), width=50),
-    Field("approach", "Suggested approach", ("suggested approach", "approach", "how to reach"), width=44),
+    # Headers are deliberately specific, so columns in the outreach workbooks are never mistaken for them.
+    Field("origins", "Origins / coffees", (), width=36),
+    Field("certifications", "Supplier certifications", (), width=22),
+    Field("export_terms", "Export capability", (), width=40),
+    Field("comparison", "Comparison with current vendor", (), width=50),
+    Field("approach", "Suggested approach", (), width=44),
     Field("draft_created", "Draft created", (
         "draft created", "intro draft created", "draft date",
     ), width=12, is_date=True),

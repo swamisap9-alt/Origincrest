@@ -18,12 +18,10 @@ from . import compliance
 from .dedupe import EMAIL_RE, core_name, norm_email, primary_key
 from .llm import AgentError
 from .mailer import build_message
-from .prompts import (EMAIL_SCHEMA, INTRO_SYSTEM, RECORD_RESEARCH, RESEARCH_SYSTEM, RFQ_SYSTEM,
-                      SUPPLIER_INTRO_SYSTEM, _filled, intro_prompt, research_prompt, rfq_prompt,
-                      supplier_intro_prompt)
+from .prompts import (EMAIL_SCHEMA, INTRO_SYSTEM, RECORD_RESEARCH, RESEARCH_SYSTEM, RFQ_SYSTEM, _filled,
+                      intro_prompt, research_prompt, rfq_prompt)
 from .runtime import ChangeSet, RunContext, commit
-from .schema import SUPPLIER_PRIVATE
-from .utils import clean, fmt_date, log, to_date, to_int
+from .utils import clean, fmt_date, log, to_date
 from .workbook import Row, WorkbookStore
 
 AGENT_NAME = "OriginCrest Agent"
@@ -31,6 +29,7 @@ _PLACEHOLDER = re.compile(r"\[[^\]]{3,80}\]")
 
 # Per kind of row: draft workflow name, record type (footer / follow-up timing), follow-up days setting,
 # subject used if the model returns none, report label, and the status once drafted.
+# "supplier" rows exist only in the supplier agent's own workbook (see suppliers.py).
 _KINDS = {
     "buyer": ("intro", "lead", "lead_days", "Indonesian single-origin green coffee", "Intro", "intro_drafted"),
     "freight": ("rfq", "quote", "quote_days", "Request for quotation", "RFQ", "rfq_drafted"),
@@ -105,16 +104,14 @@ def _email_context(data: dict) -> dict:
 
 class LeadRun:
     def __init__(self, ctx: RunContext, stores: dict[str, WorkbookStore], max_drafts: int | None,
-                 redraft: bool = False, default_drafts: int | None = None):
+                 redraft: bool = False):
         self.redraft = redraft  # draft again for companies whose earlier draft was deleted
         self.ctx, self.cfg, self.report = ctx, ctx.cfg, ctx.report
         self.lc = ctx.cfg["leads"]
         self.stores = stores
         self.changes = ChangeSet()
         self.research_budget = self.lc["max_research_per_run"]
-        if max_drafts is None:
-            max_drafts = self.lc["max_drafts_per_run"] if default_drafts is None else default_drafts
-        self.draft_budget = max_drafts
+        self.draft_budget = self.lc["max_drafts_per_run"] if max_drafts is None else max_drafts
         self.approved = {s.lower() for s in self.lc["approved_statuses"]}
         self._sender: compliance.Sender | None = None
         self.mailbox = None
@@ -191,7 +188,8 @@ class LeadRun:
     # one lead --------------------------------------------------------------
     def _draft(self, key: str, rows: list[Row], values: dict, notes: list[str], *, email: str, contact: str,
                kind: str, line: str, compose: Callable[[], dict]) -> None:
-        """Shared checks, then compose and save the draft (intro, RFQ or supplier enquiry)."""
+        """Shared checks, then compose and save the draft (intro for buyers, RFQ for freight, enquiry for
+        suppliers)."""
         cfg, report, row = self.cfg, self.report, rows[0]
         workflow, record_type, days_key, fallback, label, drafted_status = _KINDS[kind]
         status = row.text("status").lower()
@@ -247,11 +245,14 @@ class LeadRun:
                 report.add("Errors", f"{row.text('company')}: drafting failed - {exc}")
                 return
             body = sender.finish_body(cfg, draft["body"], record_type=record_type, source_url=row.text("source_url"))
+            # Intros and RFQs always carry List-Unsubscribe; supplier enquiries (purchase enquiries) only if
+            # the supplier agent's compliance settings ask for a footer.
+            unsubscribe = (sender.unsubscribe_email if kind != "supplier"
+                           or compliance.needs_unsubscribe(cfg, record_type) else "")
             msg = build_message(
                 from_name=sender.name, from_addr=sender.email, to_addr=email, to_name=contact,
                 subject=clean(draft["subject"]) or fallback, body=body,
-                unsubscribe_addr=sender.unsubscribe_email if compliance.needs_unsubscribe(cfg, record_type) else "",
-                agent_tag=f"{workflow}; {row.ref}")
+                unsubscribe_addr=unsubscribe, agent_tag=f"{workflow}; {row.ref}")
             self.draft_budget -= 1
             if _PLACEHOLDER.search(draft["body"]):
                 notes.append("Fill in the [bracketed] details before sending")
@@ -343,61 +344,30 @@ class LeadRun:
         self._draft(key, rows, {"record_type": "Quote"}, [], email=email, contact=contact, kind="freight",
                     line=line, compose=compose)
 
-    def supplier(self, key: str, rows: list[Row]) -> None:
-        """Sourcing enquiry to an Indonesian supplier, written from its row (found by `suppliers`, or yours)."""
-        cfg, row = self.cfg, rows[0]
-        sc = cfg["suppliers"]
-        email = next((e for r in rows if (e := _first_email(r.text("email")))), "")
-        contact = row.text("contact_name")
-        score_text = row.text("fit_score")
-        score = to_int(row.get("fit_score"))
-        where = ", ".join(x for x in (row.text("city"), row.text("state")) if x) or row.sheet.title
-        line = f"{row.text('company')} ({where})" + (f": fit {score}/100" if score_text else "")
-        if (email and score_text and score < sc["min_fit_score_for_draft"] and not self.redraft
-                and row.text("status").lower() not in self.approved):
-            self.report.add("Low fit (no draft)", line)
-            self._finish(rows, {}, [], f"Fit {score} is below {sc['min_fit_score_for_draft']} - no draft. "
-                                       "Set status to Approved to draft anyway.", cfg.status("low_fit"))
-            return
-        self._draft(key, rows, {"record_type": "Supplier"}, [], email=email, contact=contact, kind="supplier",
-                    line=line, compose=lambda: self.ctx.agent.structured(
-                        system=SUPPLIER_INTRO_SYSTEM,
-                        prompt=supplier_intro_prompt(row.email_context(skip=SUPPLIER_PRIVATE), contact, cfg),
-                        schema=EMAIL_SCHEMA, effort=sc["email_effort"]))
 
-
-def run_leads(ctx: RunContext, max_drafts: int | None = None, redraft: list[str] | None = None,
-              only_kind: str | None = None) -> int:
-    """Draft for new leads; with `redraft` (company names), draft again for just those companies.
-
-    `only_kind="supplier"` drafts only the sourcing enquiries (used by the `suppliers` command)."""
+def run_leads(ctx: RunContext, max_drafts: int | None = None, redraft: list[str] | None = None) -> int:
+    """Draft for new leads; with `redraft` (company names), draft again for just those companies."""
     cfg = ctx.cfg
     names = [n for n in cfg["workbooks"] if cfg.lead_tabs(n)]
-    if only_kind == "supplier":
-        names = [n for n in names if n == cfg.supplier_workbook]
     stores = {}
     for name in names:
         try:
             stores[name] = WorkbookStore(name, cfg.workbook_path(name), cfg).load()
         except FileNotFoundError as exc:
-            if name != cfg.supplier_workbook:  # the supplier workbook only exists after the first `suppliers` run
-                ctx.report.add("Errors", str(exc))
-    groups = _candidates(ctx, stores, redraft, only_kind)
+            ctx.report.add("Errors", str(exc))
+    groups = _candidates(ctx, stores, redraft)
     if redraft is not None:
         found = [r.text("company") for rows in groups.values() for r in rows]
         for name in redraft:
             if not any(core_name(name) in core_name(c) for c in found):
                 ctx.report.add("Not found", f"No row for '{name}' in the new-lead tabs")
     log.info("%d lead(s) to research or draft", len(groups))
-    run = LeadRun(ctx, stores, max_drafts, redraft=redraft is not None,
-                  default_drafts=cfg["suppliers"]["max_drafts_per_run"] if only_kind == "supplier" else None)
+    run = LeadRun(ctx, stores, max_drafts, redraft=redraft is not None)
     for name in stores:
         run.changes.touch(name)  # also writes any rows still queued from discovery
     try:
         for key, rows in groups.items():
-            if rows[0].kind == "supplier":
-                run.supplier(key, rows)
-            elif rows[0].kind == "freight":
+            if rows[0].kind == "freight":
                 run.freight(key, rows)
             else:
                 run.buyer(key, rows)

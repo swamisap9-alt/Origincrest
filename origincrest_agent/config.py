@@ -31,12 +31,6 @@ DEFAULTS: dict[str, Any] = {
             + r"\OriginCrest enquiries\Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx",
             "default_kind": "buyer",
         },
-        # Indonesian green-coffee suppliers (exporters, cooperatives, mills). Created on the first
-        # `suppliers` run if it doesn't exist yet.
-        "suppliers": {
-            "path": _ORIGINCREST + r"\OriginCrest suppliers\Indonesian_Coffee_Suppliers.xlsx",
-            "default_kind": "supplier",
-        },
     },
     "tabs": {
         # Tabs the agent must never read or write.
@@ -46,7 +40,6 @@ DEFAULTS: dict[str, Any] = {
         "new": "New - to review",
         "intro_drafted": "Intro drafted - to review",
         "rfq_drafted": "RFQ drafted - to review",
-        "supplier_drafted": "Enquiry drafted - to review",
         "low_fit": "Researched - low fit",
         "no_email": "No public email",
         "open": "Open",
@@ -121,46 +114,6 @@ DEFAULTS: dict[str, Any] = {
         "verify_contacts": True,
         "run_leads_after": True,
     },
-    # Supplier discovery (every 3 days): Indonesian exporters, cooperatives and mills that could supply
-    # OriginCrest, each compared with the current vendor, then a sourcing-enquiry draft for each.
-    "suppliers": {
-        "workbook": "suppliers",
-        "tab": "New Suppliers - Indonesia",
-        # The vendor every find is compared with. `profile` is what you know about them (origins, grades,
-        # prices, minimums, terms, how responsive they are); the comparison is only as good as this.
-        # Set both in config.yaml (never committed): the repository is public.
-        "baseline_vendor": {"name": "", "profile": ""},
-        "every_days": 3,                 # how often the scheduled task runs; also rotates the search focus
-        "focus_per_run": 2,              # how many regions / supplier types each run searches
-        "candidates_per_focus": 6,
-        "max_new_rows_per_run": 8,
-        "max_drafts_per_run": 8,
-        "min_fit_score_for_draft": 50,
-        "web_searches_per_focus": 8,
-        "web_fetches_per_focus": 8,
-        "effort": "high",
-        "email_effort": "medium",
-        # Extra regions or supplier types to search, on top of the built-in rotation.
-        "extra_focus": [],
-        # Searches for what you need now (e.g. the coffees in a customer's quote): every run takes the next
-        # one of these, plus focus_per_run - 1 from the rotation.
-        "priority_focus": [],
-    },
-    # What the supplier emails say about OriginCrest as a buyer. Blank values become [placeholders]
-    # in the draft for you to fill in; the agent never invents volumes, prices or dates.
-    "sourcing": {
-        "intro": "",       # who OriginCrest is, e.g. "Adelaide-based importer of Indonesian green coffee"
-        "demand": "",      # e.g. "<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL every ..."
-        "logistics": ("Sea freight, customs and biosecurity clearance and warehousing in Australia are "
-                      "already arranged."),
-        "wanted": ["Sumatra", "Sulawesi", "Java", "Flores"],
-        "ask": ["FOB price per kg at your loading port, for the trial (LCL) quantity and for a 20ft FCL",
-                "whether that price includes export documents and charges (PEB, phytosanitary certificate, "
-                "fumigation, ICO certificate / certificate of origin)",
-                "your minimum order, and whether you can prepare a part-container (LCL) shipment",
-                "preparation time after deposit, and your loading port",
-                "green samples for approval before shipment", "payment terms"],
-    },
     "leads": {
         # Workflow 2 works on the new-lead tabs above, plus any tabs you list here.
         "extra_tabs": [],
@@ -199,7 +152,6 @@ DEFAULTS: dict[str, Any] = {
                          "no further follow up", "do not follow up", "don't follow up"],
         "quote_days": 5,
         "lead_days": 10,
-        "supplier_days": 3,
         "max_drafts_per_run": 15,
         "max_followups_per_contact": 3,
         "effort": "medium",
@@ -321,15 +273,7 @@ class Config:
         tabs = set(self.data["leads"].get("extra_tabs") or [])
         if p := self.profile(workbook):
             tabs |= {p["adelaide_tab"], p["other_tab"]}
-        if workbook == self.supplier_workbook:
-            tabs.add(self.data["suppliers"]["tab"])
         return tabs
-
-    @property
-    def supplier_workbook(self) -> str:
-        """Name of the workbook that holds Indonesian suppliers ('' if it isn't configured)."""
-        name = self.data["suppliers"].get("workbook") or ""
-        return name if name in self.data["workbooks"] else ""
 
     @property
     def skip_statuses(self) -> set[str]:

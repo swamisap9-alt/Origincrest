@@ -1,6 +1,6 @@
 # OriginCrest outreach agent
 
-One agent with three outreach workflows, a supplier search, and a daily Google Drive backup. It runs on your Windows PC, reads and writes the two
+One agent with three workflows, plus a daily Google Drive backup. It runs on your Windows PC, reads and writes the two
 OneDrive workbooks directly, uses Claude (with web search) for research and writing, and
 saves every email as an **IMAP draft** for you to review. It never sends email.
 
@@ -9,7 +9,6 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 | 1 | `discover` | Weekly (Mon 6:30) | Finds new leads on the web, separately for each workbook (below). Skips anything already in that workbook, then adds new rows with status **New - to review** to two tabs: one for Adelaide / SA, one for all other states. |
 | 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Turns each new lead into a draft written from its own row. Freight forwarders, customs brokers and 3PLs get a tailored **RFQ**. Coffee businesses are researched first (what they sell, size, sourcing, current Indonesian coffees, fit 0-100 for Sumatra / Sulawesi / Java / Flores), then get a personalised **intro email**. |
 | 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook (e.g. its **contacts** tab) and every new-lead tab, finds **Open** rows, or rows with a **Date sent** and no status, with no reply by the row's **Followup date** (or after 5 days for quotes, 10 for leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Followup date**. Rows whose **Notes** say "need to be called" get a **[CALL FIRST]** draft with the phone number and call points. |
-| 5 | `suppliers` | Every 3 days (6:00) | Finds **Indonesian green-coffee suppliers** (exporters, cooperatives with an export licence, mills), compares each with your current vendor, and adds them to their own workbook with a fit score, the comparison, verified contact details and a suggested way to reach them. Then drafts a **sourcing enquiry** to each: who OriginCrest is, that it's ready to import, the demand (LCL trial, then FCL) and that freight and warehousing are arranged. Unanswered enquiries get a follow-up draft after 3 days (workflow 3). |
 | 4 | `drive-sync` | Checks every 15 min | When a file in the OneDrive `Origincrest` folder (or a subfolder) has changed, copies it to Google Drive (`Business > Origincrest files synced from laptop`). With no changes it does nothing: no copy, no report. Never deletes anything; files that disappear locally are just reported. |
 
 | Workbook | New leads it gets | Tabs | Email |
@@ -17,11 +16,12 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 | `OriginCrest_Freight_3PL_Contacts_RFQ.xlsx` | Freight forwarders, customs brokers and 3PLs that handle green or roasted coffee | `New Freight-3PL - Adelaide`, `New Freight-3PL - Other States` | RFQ |
 | `Australian_Coffee_3PL_Master_Contacts_Oct2026.xlsx` | Every category in the **New Prospects Oct-26** tab, plus the importer / roaster / wholesaler / trader categories in **All contacts** (read from their Category column each run) | `New Leads - Adelaide`, `New Leads - Other States` | Intro (RFQ for any logistics category) |
 
-| `Indonesian_Coffee_Suppliers.xlsx` (created on the first run, in `Origincrest\OriginCrest suppliers`) | Indonesian exporters, cooperatives and mills | `New Suppliers - Indonesia` | Sourcing enquiry |
-
 `scripts\run.cmd check` lists the categories it found in your tabs, with an example company for each.
 
 The spreadsheets stay where they are in OneDrive.
+
+> **Indonesian supplier search** is a separate agent with its own settings file (`config.suppliers.yaml`),
+> scheduled tasks and data folder, so it can't change anything here. See [SUPPLIERS.md](SUPPLIERS.md).
 
 ## Guardrails
 
@@ -153,60 +153,9 @@ styled like your existing headers, and Excel tables and filters are stretched to
    ```
    Change times with e.g. `-DiscoverDay Sunday -DiscoverTime 20:00 -FollowupTime 07:00`. The tasks run as
    you while you're logged in (a locked screen is fine) and catch up on runs missed while the laptop was off.
-   **1 Discover**, **3 Follow-up** and **5 Suppliers** also wake the laptop from sleep when it's plugged in (the script turns on
+   **1 Discover** and **3 Follow-up** also wake the laptop from sleep when it's plugged in (the script turns on
    "Allow wake timers" for plugged-in use), and the agent keeps it awake until the run finishes. Remove the
    tasks with `scripts\uninstall_tasks.ps1`.
-
-## Supplier search (`suppliers`)
-
-For finding suppliers yourself, without going through your current vendor or a partner.
-
-> **This repository is public.** Your customer, your demand and your vendor's prices go in `config.yaml`,
-> which is never committed. Don't put them in `config.example.yaml` or anywhere else in this folder.
-
-1. **Tell it what you're buying.** In `config.yaml`:
-   ```yaml
-   sourcing:
-     intro: 'OriginCrest is an Adelaide-based importer of Indonesian single-origin green coffee.'
-     demand: '<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL (about ... t) every ...'
-   suppliers:
-     baseline_vendor:
-       name: '<current vendor>'
-       profile: 'Origins and grades offered, FOB prices quoted, minimum order, payment terms, responsiveness'
-     priority_focus:            # optional: searched first, one per run, until you remove them
-       - 'Robusta Grade 1 natural from Dampit (Malang, East Java): exporters shipping from Surabaya'
-   ```
-   `demand` goes into every enquiry, word for word. Left blank, drafts carry `[placeholders]` for the
-   customer and the LCL / FCL quantities, and the row's notes say to fill them in. `profile` is what each new
-   supplier is compared against; left blank, the comparison only says what the new supplier shows and what to
-   ask both sides. The freight line ("already arranged") is `sourcing.logistics`.
-2. **Try it**, with Excel closed:
-   ```powershell
-   scripts\run.cmd suppliers --dry-run --max-rows 3      # searches and reports, writes nothing
-   scripts\run.cmd suppliers --max-rows 3                # 3 suppliers + enquiry drafts
-   scripts\run.cmd suppliers --focus "Toraja exporters in Makassar"
-   ```
-3. **Schedule it**: run `install_tasks.ps1` again. It adds **5 Suppliers**, every 3 days at 6:00
-   (`-SuppliersEveryDays 3 -SuppliersTime 06:00`).
-
-Each run searches two regions or supplier types (with `priority_focus` set: the next priority search plus one
-from the rotation) and moves on to the next two at the following run (Gayo,
-Mandheling / Lintong, Toraja, Java, Flores and Bali, certified cooperatives, export houses, trade-show
-exhibitors, exporters already shipping to Australia, and so on), so it keeps finding new suppliers. A supplier
-is added once: deleting its row doesn't bring it back.
-
-What you get per supplier, in `New Suppliers - Indonesia`: contact details (email, phone, WhatsApp) kept only
-if they are published on the supplier's own pages; `Origins / coffees`, `Certifications`, `Export capability`;
-`Fit score (0-100)`, `Comparison with current vendor` and `Suggested approach` (which channel to open with,
-and what to lead with). Those last three are for you: the email writer never sees them, and enquiries never
-mention another supplier. Your vendor's name and prices are only used for the comparison, never in an email. The run report (`latest_suppliers.md`) lists the comparisons together.
-
-The enquiry is saved to Drafts like every other email, the status becomes `Enquiry drafted - to review`, and
-once you send it the row turns `Open`. With no reply after 3 days (`followup.supplier_days`), the weekday
-follow-up run drafts a threaded follow-up; up to 3 per supplier. Rows you add to the tab yourself get an
-enquiry too. Suppliers scoring under 50 aren't drafted to unless you set the status to `Approved`.
-Supplier enquiries are purchase enquiries, not marketing, so they carry your signature but no unsubscribe
-footer; a supplier who replies "unsubscribe" is still never contacted again.
 
 ## Google Drive backup (`drive-sync`)
 
@@ -291,7 +240,6 @@ scripts\run.cmd discover [--dry-run] [--workbook rfq|master] [--categories "Roas
 scripts\run.cmd leads [--dry-run] [--max-drafts N]
 scripts\run.cmd redraft "Smith Channon" Pakval [--dry-run]   # new first draft after you deleted one
 scripts\run.cmd followup [--dry-run] [--max-drafts N]
-scripts\run.cmd suppliers [--dry-run] [--max-rows N] [--max-drafts N] [--focus "..."] [--no-drafts]
 scripts\run.cmd flush        # write rows still queued from a run when Excel was open
 scripts\run.cmd drafts       # which mail folder drafts go to, and the drafts the agent saved there
 scripts\run.cmd drive-sync [--dry-run]   # back up the OneDrive Origincrest folder to Google Drive
@@ -310,6 +258,6 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
 OC_TEST_IMAP=127.0.0.1:1143:user:password .venv/bin/python -m pytest tests/test_imap_integration.py
 ```
 
-Code map: `discovery.py`, `leads.py`, `followup.py`, `suppliers.py` (the workflows) · `workbook.py` (adaptive Excel I/O) ·
+Code map: `discovery.py`, `leads.py`, `followup.py` (the workflows) · `workbook.py` (adaptive Excel I/O) ·
 `dedupe.py` · `verify.py` (public-contact checks) · `mailer.py` (IMAP) · `compliance.py` (footer, sender checks) ·
 `llm.py` + `prompts.py` (Claude) · `state.py` (SQLite) · `runtime.py` (safe commit, locks, reports).

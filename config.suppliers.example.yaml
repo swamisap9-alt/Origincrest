@@ -1,0 +1,47 @@
+# Supplier agent settings (Indonesian green-coffee suppliers). Copy to config.suppliers.yaml and edit.
+#   Copy-Item config.suppliers.example.yaml config.suppliers.yaml
+#
+# This file is only for the supplier agent: editing it never changes the outreach agent, and the
+# outreach agent's config.yaml never changes the supplier search. config.suppliers.yaml is not
+# committed (the repository is public), so your vendor, customer and prices are safe in it.
+#
+# Shared with the outreach agent, read only: the email, sender, claude and timezone sections of
+# config.yaml (same mailbox, Drafts folder, From address and signature) and the keys in .env.
+# To use different values for the supplier agent, add that section here; it wins.
+# Windows paths: keep them in single quotes so the backslashes stay as they are.
+
+suppliers:
+  # Created by the first search if it doesn't exist.
+  workbook_path: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest suppliers\Indonesian_Coffee_Suppliers.xlsx'
+  tab: New Suppliers - Indonesia
+  baseline_vendor:
+    name: ''                    # your current vendor
+    # What you know about them: origins and grades, prices quoted, what the price includes, minimum
+    # order, payment terms, production time, how responsive they are. New suppliers are compared with
+    # this. It is never put in an email.
+    profile: ''
+  every_days: 3                 # keep in step with install_supplier_tasks.ps1 -SearchEveryDays
+  focus_per_run: 2
+  max_new_rows_per_run: 8
+  max_drafts_per_run: 8
+  min_fit_score_for_draft: 50
+  priority_focus: []            # searched first, one per run, e.g. ['Robusta Grade 1 natural from Dampit, Surabaya']
+  extra_focus: []               # more regions / supplier types for the rotation
+
+# What the enquiries say about OriginCrest as a buyer. `demand` is used word for word; left blank,
+# drafts carry [placeholders] for the customer and the LCL / FCL quantities.
+sourcing:
+  intro: ''                     # e.g. 'OriginCrest Pty Ltd is an Adelaide-based importer of Indonesian green coffee.'
+  demand: ''                    # e.g. '<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL (about 18 t)'
+  logistics: 'Sea freight, customs and biosecurity clearance and warehousing in Australia are already arranged.'
+  wanted: [Sumatra, Sulawesi, Java, Flores]
+
+# The supplier agent's own follow-ups (config.yaml's followup section is not used here).
+followup:
+  supplier_days: 3              # follow up enquiries with no reply after this many days
+  max_followups_per_contact: 3
+  max_drafts_per_run: 15
+
+# Optional. Its own data folder (state, logs, reports, workbook backups). Default: a "suppliers"
+# folder inside the outreach agent's data folder.
+# data_dir: '%LOCALAPPDATA%\OriginCrestAgent\suppliers'

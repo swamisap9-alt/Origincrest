@@ -1,10 +1,13 @@
-"""Supplier discovery: Indonesian green-coffee exporters, cooperatives and mills (every 3 days).
+"""The supplier agent's workflows: Indonesian green-coffee exporters, cooperatives and mills.
 
-Each run searches a couple of growing regions or supplier types (rotating, so repeated runs keep
-finding new ones), compares every find with the current vendor, and adds it to the supplier
-workbook with a fit score, the comparison and a suggested way to make contact. A sourcing-enquiry
-draft is then saved for each new supplier (see `LeadRun.supplier`), and the follow-up workflow
-chases unanswered enquiries after 3 days.
+* search (every 3 days): a couple of growing regions or supplier types per run (rotating, so repeated
+  runs keep finding new ones, plus any `priority_focus`). Every find is compared with the current
+  vendor and added to the supplier workbook with a fit score, the comparison and a suggested approach.
+* drafts: a sourcing enquiry for each new supplier, saved to the shared mailbox's Drafts folder.
+* follow-up (weekdays): a threaded follow-up for enquiries with no reply after `supplier_days`.
+
+Runs with its own settings (config.suppliers.yaml, see supplier_config.py), its own workbook and its own
+data folder, so nothing here touches the outreach agent's workbooks, state or settings.
 """
 
 from __future__ import annotations
@@ -15,14 +18,21 @@ import openpyxl
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
+import re
+
 from .dedupe import DedupeIndex, entity_keys, norm_phone
+from .followup import run_followup
+from .leads import LeadRun, _candidates, _first_email
 from .llm import AgentError
-from .prompts import RECORD_SUPPLIERS, SUPPLIER_SYSTEM, _filled, supplier_discovery_prompt
+from .prompts import EMAIL_SCHEMA, _filled
 from .runtime import ChangeSet, RunContext, commit
-from .schema import FIELD_BY_KEY, NEW_TAB_KEYS
+from .schema import FIELD_BY_KEY, NEW_TAB_KEYS, SUPPLIER_PRIVATE
 from .state import decode_values
-from .utils import clean, log
-from .workbook import HEADER_FILL, WorkbookStore, build_dedupe_index
+from .supplier_config import WORKBOOK
+from .supplier_prompts import (RECORD_SUPPLIERS, SUPPLIER_INTRO_SYSTEM, SUPPLIER_SYSTEM, supplier_discovery_prompt,
+                               supplier_intro_prompt)
+from .utils import clean, log, to_int
+from .workbook import HEADER_FILL, Row, WorkbookStore
 
 AGENT_NAME = "OriginCrest Agent"
 
@@ -62,10 +72,31 @@ def run_focus(cfg, today) -> list[str]:
     return picked + [pool[(start + i) % len(pool)] for i in range(rest)]
 
 
+# Indonesian company forms, ignored when checking for duplicates ("PT. Kopi Nusantara" = "Kopi Nusantara").
+_LEGAL_PREFIX = re.compile(r"^\s*(?:pt|cv|ud|fa)\b\.?\s+", re.I)
+_LEGAL_SUFFIX = re.compile(r"[\s,]+(?:tbk|persero)\.?\s*$", re.I)
+
+
+def dedupe_name(company: str) -> str:
+    name = _LEGAL_SUFFIX.sub("", _LEGAL_PREFIX.sub("", clean(company)))
+    return name or clean(company)
+
+
+def supplier_index(store: WorkbookStore | None) -> DedupeIndex:
+    """Every supplier already in the workbook, by name (without PT / CV), website, email and phone."""
+    index = DedupeIndex()
+    for view in store.views() if store else []:
+        for row in view.rows():
+            company = row.text("company")
+            label = f"{store.path.name} > {view.title} row {row.index}" + (f" ({company})" if company else "")
+            index.add(label, company=dedupe_name(company), website=row.text("website"), email=row.text("email"),
+                      phone=row.text("phone"), extra_text=row.all_text())
+    return index
+
+
 def ensure_workbook(cfg) -> Path:
     """Create the supplier workbook (one tab, headers only) if it doesn't exist yet."""
-    name = cfg.supplier_workbook
-    path = cfg.workbook_path(name)
+    path = cfg.workbook_path(WORKBOOK)
     if path.exists():
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,29 +124,25 @@ def _phones(phone: str, whatsapp: str) -> str:
 
 
 def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str] | None = None) -> int:
+    """Search for new suppliers and add them to the supplier workbook. Returns how many were added."""
     cfg, report = ctx.cfg, ctx.report
     sc = cfg["suppliers"]
-    name = cfg.supplier_workbook
-    if not name:
-        report.add("Errors", f"suppliers.workbook '{sc.get('workbook')}' is not listed under workbooks: in config.yaml")
-        return 0
+    name = WORKBOOK
     path = cfg.workbook_path(name)
     if not path.exists() and not ctx.dry_run:
         ensure_workbook(cfg)
         report.add("Supplier workbook", f"Created {path}")
 
     vendor = _filled(sc["baseline_vendor"].get("name"))
-    index = DedupeIndex()
-    if path.exists():
-        index = build_dedupe_index({name: WorkbookStore(name, path, cfg).load()})
+    index = supplier_index(WorkbookStore(name, path, cfg).load() if path.exists() else None)
     for keys in ctx.state.discovered_entities(name):
         index.add_keys("an earlier supplier search", keys)
     for item in ctx.state.pending_rows(name):
         v = decode_values(item["values_json"])
-        index.add("rows waiting to be written", v.get("company", ""), v.get("website", ""), v.get("email", ""),
-                  v.get("phone", ""))
+        index.add("rows waiting to be written", dedupe_name(v.get("company", "")), v.get("website", ""),
+                  v.get("email", ""), v.get("phone", ""))
     if vendor:
-        index.add("your current vendor", vendor)
+        index.add("your current vendor", dedupe_name(vendor))
     if not _filled(sc["baseline_vendor"].get("profile")):
         report.add("Comparison", f"suppliers.baseline_vendor.profile is blank, so comparisons with {vendor or 'your vendor'} "
                                  "only say what each new supplier shows and what to ask - add what you know "
@@ -155,7 +182,7 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
             if website and not website.lower().startswith(("http://", "https://")):
                 website = "https://" + website
             email, phone, whatsapp = (clean(cand.get(k)) for k in ("email", "phone", "whatsapp"))
-            if dup := index.match(company, website, email, phone or whatsapp):
+            if dup := index.match(dedupe_name(company), website, email, phone or whatsapp):
                 report.add("Skipped duplicates", f"{company} - already in {dup}")
                 report.count("duplicates skipped")
                 continue
@@ -195,7 +222,7 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
                 "record_type": "Supplier",
                 "agent_notes": "; ".join(notes),
             }
-            index.add(f"this run ({tab})", company, website, check.email, check.phone or whatsapp)
+            index.add(f"this run ({tab})", dedupe_name(company), website, check.email, check.phone or whatsapp)
             line = (f"{company} [{values['category']}, {values['city'] or '?'}] fit {score}/100 - "
                     f"{check.email or 'no verified email'}{' - ' + values['phone'] if values['phone'] else ''}")
             if ctx.dry_run:
@@ -205,7 +232,8 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
             else:
                 ctx.state.queue_row(name, tab, "supplier", values)
                 ctx.state.add_discovered(name, company, "supplier",
-                                         entity_keys(company, website, check.email, check.phone or whatsapp),
+                                         entity_keys(dedupe_name(company), website, check.email,
+                                                     check.phone or whatsapp),
                                          source_url, ctx.today)
                 report.add("Added (status: " + cfg.status("new") + ")", line)
                 report.add(f"Comparison with {vendor or 'current vendor'}", f"{company}: {values['comparison']}")
@@ -215,3 +243,75 @@ def run_suppliers(ctx: RunContext, max_rows: int | None = None, focus: list[str]
 
     commit(ctx, ChangeSet())
     return added
+
+
+class SupplierRun(LeadRun):
+    """Drafts sourcing enquiries to suppliers, through the same checks and Drafts folder as intros and RFQs."""
+
+    def __init__(self, ctx: RunContext, stores: dict[str, WorkbookStore], max_drafts: int | None,
+                 redraft: bool = False):
+        super().__init__(ctx, stores, max_drafts, redraft=redraft)
+        if max_drafts is None:
+            self.draft_budget = ctx.cfg["suppliers"]["max_drafts_per_run"]
+
+    def supplier(self, key: str, rows: list[Row]) -> None:
+        cfg, row = self.cfg, rows[0]
+        sc = cfg["suppliers"]
+        email = next((e for r in rows if (e := _first_email(r.text("email")))), "")
+        contact = row.text("contact_name")
+        score_text = row.text("fit_score")
+        score = to_int(row.get("fit_score"))
+        where = ", ".join(x for x in (row.text("city"), row.text("state")) if x) or row.sheet.title
+        line = f"{row.text('company')} ({where})" + (f": fit {score}/100" if score_text else "")
+        if (email and score_text and score < sc["min_fit_score_for_draft"] and not self.redraft
+                and row.text("status").lower() not in self.approved):
+            self.report.add("Low fit (no draft)", line)
+            self._finish(rows, {}, [], f"Fit {score} is below {sc['min_fit_score_for_draft']} - no draft. "
+                                       "Set status to Approved to draft anyway.", cfg.status("low_fit"))
+            return
+        # The email writer sees the supplier's row without your private assessment (comparison, approach).
+        self._draft(key, rows, {"record_type": "Supplier"}, [], email=email, contact=contact, kind="supplier",
+                    line=line, compose=lambda: self.ctx.agent.structured(
+                        system=SUPPLIER_INTRO_SYSTEM,
+                        prompt=supplier_intro_prompt(row.email_context(skip=SUPPLIER_PRIVATE), contact, cfg),
+                        schema=EMAIL_SCHEMA, effort=sc["email_effort"]))
+
+
+def _store(ctx: RunContext) -> WorkbookStore | None:
+    path = ctx.cfg.workbook_path(WORKBOOK)
+    return WorkbookStore(WORKBOOK, path, ctx.cfg).load() if path.exists() else None
+
+
+def run_supplier_drafts(ctx: RunContext, max_drafts: int | None = None, redraft: list[str] | None = None) -> int:
+    """Enquiry drafts for suppliers in the workbook that don't have one yet (or, with `redraft`, for those
+    companies again). Returns how many drafts were saved."""
+    store = _store(ctx)
+    if store is None:
+        ctx.report.add("Nothing to draft", f"No supplier workbook yet ({ctx.cfg.workbook_path(WORKBOOK)})")
+        return 0
+    stores = {WORKBOOK: store}
+    groups = _candidates(ctx, stores, redraft, only_kind="supplier")
+    if redraft is not None:
+        found = [dedupe_name(r.text("company")).lower() for rows in groups.values() for r in rows]
+        for name in redraft:
+            if not any(dedupe_name(name).lower() in f for f in found):
+                ctx.report.add("Not found", f"No row for '{name}' in the supplier workbook")
+    log.info("%d supplier(s) to draft", len(groups))
+    run = SupplierRun(ctx, stores, max_drafts, redraft=redraft is not None)
+    run.changes.touch(WORKBOOK)  # also writes any rows still queued from the search
+    try:
+        for key, rows in groups.items():
+            run.supplier(key, rows)
+    finally:
+        if run.mailbox is not None:
+            run.mailbox.close()
+    commit(ctx, run.changes)
+    return run.drafted
+
+
+def run_supplier_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
+    """Follow-ups for enquiries with no reply after `followup.supplier_days`. Returns drafts saved."""
+    if not ctx.cfg.workbook_path(WORKBOOK).exists():
+        ctx.report.add("Nothing to follow up", "No supplier workbook yet - run a search first")
+        return 0
+    return run_followup(ctx, max_drafts=max_drafts)

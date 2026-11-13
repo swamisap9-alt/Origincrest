@@ -21,7 +21,6 @@ from .llm import AgentError
 from .mailer import MailInfo, build_message
 from .prompts import FOLLOWUP_SCHEMA, FOLLOWUP_SYSTEM, followup_prompt
 from .runtime import ChangeSet, RunContext, commit
-from .schema import SUPPLIER_PRIVATE
 from .utils import clean, fmt_date, log, to_date, to_int
 from .workbook import Row, WorkbookStore
 
@@ -33,7 +32,9 @@ def _utc(dt: datetime) -> datetime:
 
 
 def _record_type(row: Row) -> str:
-    return {"buyer": "lead", "supplier": "supplier"}.get(row.kind, "quote")
+    if row.kind == "supplier":  # only in the supplier agent's own workbook
+        return "supplier"
+    return "lead" if row.kind == "buyer" else "quote"
 
 
 def _local_date(info: MailInfo, fallback: date) -> date:
@@ -89,10 +90,11 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
         except FileNotFoundError as exc:
             if name in fc["workbooks"]:
                 raise
-            if name != cfg.supplier_workbook:  # only exists after the first `suppliers` run
-                report.add("Errors", str(exc))
+            report.add("Errors", str(exc))
     open_statuses = {_norm(s) for s in fc["open_statuses"]}
-    awaiting_send = {_norm(cfg.status(s)) for s in ("intro_drafted", "rfq_drafted", "supplier_drafted")}
+    awaiting_send = {_norm(cfg.status("intro_drafted")), _norm(cfg.status("rfq_drafted"))}
+    if cfg["statuses"].get("supplier_drafted"):  # set only by the supplier agent's config
+        awaiting_send.add(_norm(cfg.status("supplier_drafted")))
     call_phrases, done_phrases = fc.get("call_phrases") or [], fc.get("done_phrases") or []
     groups: dict[str, list[Row]] = {}
     for store in stores.values():
@@ -130,7 +132,10 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             row = rows[0]
             company = row.text("company") or "(no company name)"
             rtype = _record_type(row)
-            days = fc[f"{rtype}_days"]
+            if rtype == "supplier":
+                days = fc["supplier_days"]
+            else:
+                days = fc["lead_days"] if rtype == "lead" else fc["quote_days"]
             label = f"{company} [{rtype}, {row.sheet.title}]"
             match = EMAIL_RE.search(row.text("email"))
             email = norm_email(match.group(0)) if match else ""
@@ -255,15 +260,22 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
 
             threaded = bool(last_sent and last_sent.message_id)
             try:
-                draft = ctx.agent.structured(
-                    system=FOLLOWUP_SYSTEM,
-                    prompt=followup_prompt(record_type=rtype, number=step,
-                                           row_context=row.email_context(
-                                               skip=SUPPLIER_PRIVATE if rtype == "supplier" else ()),
-                                           original=(last_sent.text[:1500] if last_sent else ""),
-                                           days_since=overdue, threaded=threaded, cfg=cfg, call=call,
-                                           has_email=bool(email)),
-                    schema=FOLLOWUP_SCHEMA, effort=fc["effort"])
+                original = last_sent.text[:1500] if last_sent else ""
+                if rtype == "supplier":
+                    from .supplier_prompts import SUPPLIER_FOLLOWUP_SYSTEM, supplier_followup_prompt
+                    from .schema import SUPPLIER_PRIVATE
+
+                    system = SUPPLIER_FOLLOWUP_SYSTEM
+                    prompt = supplier_followup_prompt(
+                        number=step, row_context=row.email_context(skip=SUPPLIER_PRIVATE), original=original,
+                        days_since=overdue, threaded=threaded, cfg=cfg, call=call, has_email=bool(email))
+                else:
+                    system = FOLLOWUP_SYSTEM
+                    prompt = followup_prompt(record_type=rtype, number=step, row_context=row.email_context(),
+                                             original=original, days_since=overdue, threaded=threaded, cfg=cfg,
+                                             call=call, has_email=bool(email))
+                draft = ctx.agent.structured(system=system, prompt=prompt, schema=FOLLOWUP_SCHEMA,
+                                             effort=fc["effort"])
             except AgentError as exc:
                 report.add("Errors", f"{company}: follow-up drafting failed - {exc}")
                 continue
