@@ -395,7 +395,7 @@ Never invent volumes, prices, dates or certifications. Never mention any other s
 OriginCrest is comparing suppliers.
 
 Plain text, clear international business English (many readers use English as a second language): short \
-sentences, no idioms, no hype, 150-230 words. Use the contact's name if the row has one, otherwise \
+sentences, no idioms, no hype, 170-300 words (more only if the demand needs it). Use the contact's name if the row has one, otherwise \
 "Dear <company> team,". End the body with a short sign-off such as "Kind regards," - the signature is added \
 automatically, so don't write it. Subject: under 10 words and specific, e.g. "Green coffee import enquiry \
 from Australia - Gayo arabica"."""

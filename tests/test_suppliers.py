@@ -37,9 +37,13 @@ def sheet(cfg):
     return {r[0].value: dict(zip(headers, (c.value for c in r))) for r in ws.iter_rows(min_row=2)}
 
 
+VENDOR_PROFILE = "Robusta Dampit G1 FOB USD 4.53/kg, priced per full 20ft; 70/30 payment"
+
+
 def set_cfg(cfg, tmp_path, **sourcing):
     cfg.data["workbooks"]["suppliers"]["path"] = str(tmp_path / "suppliers" / "suppliers.xlsx")
     cfg.data["suppliers"]["focus_per_run"] = 1
+    cfg.data["suppliers"]["baseline_vendor"] = {"name": "PT Baseline Kopi", "profile": VENDOR_PROFILE}
     cfg.data["sourcing"].update(sourcing)
 
 
@@ -54,11 +58,22 @@ def test_focus_rotates_every_run():
     assert run_focus(cfg, date(2026, 11, 12)) == run_focus(cfg, date(2026, 11, 12))
 
 
+def test_priority_focus_is_searched_every_run():
+    from origincrest_agent.config import DEFAULTS, Config, _deep_merge
+
+    urgent = ["Dampit robusta G1 natural exporters", "Temanggung robusta G1 exporters"]
+    cfg = Config(_deep_merge(DEFAULTS, {"suppliers": {"priority_focus": urgent}}))
+    runs = [run_focus(cfg, date(2026, 11, 13) + timedelta(days=3 * i)) for i in range(4)]
+    assert all(len(r) == 2 and r[0] in urgent and r[1] in FOCUS for r in runs)
+    assert {r[0] for r in runs} == set(urgent)          # alternates between the urgent searches
+    assert len({r[1] for r in runs}) == 4               # while the general rotation keeps moving
+
+
 def test_discovers_compares_and_drafts_enquiry(cfg, tmp_path, agent, mailbox, make_ctx):
-    set_cfg(cfg, tmp_path, demand="Soho Roasters: LCL trial of 600 kg, then one 20ft FCL per quarter")
+    set_cfg(cfg, tmp_path, demand="Hills Roasters: LCL trial of 600 kg, then one 20ft FCL per quarter")
     agent.research_queue = [ResearchResult(data={"suppliers": [
         supplier(),
-        supplier("PT Putra Pulau", "sales@putrapulau.example", website="", source_url=""),   # the current vendor
+        supplier("PT Baseline Kopi", "sales@baselinekopi.example", website="", source_url=""),   # the current vendor
         supplier("CV Unverified Kopi", "made-up@nowhere.example", website="https://unverified.example",
                  source_url="https://unverified.example/contact", whatsapp="", phone=""),
     ]})]
@@ -69,10 +84,11 @@ def test_discovers_compares_and_drafts_enquiry(cfg, tmp_path, agent, mailbox, ma
     assert run_leads(ctx, only_kind="supplier") == 1
 
     search_prompt = agent.calls[0][1]
-    assert "PT Putra Pulau" in search_prompt and "Soho Roasters" in search_prompt
+    assert "PT Baseline Kopi" in search_prompt and "Hills Roasters" in search_prompt
+    assert VENDOR_PROFILE in search_prompt
     rows = sheet(cfg)
     assert set(rows) == {"Koperasi Gayo Mountain", "CV Unverified Kopi"}
-    assert any("PT Putra Pulau" in line for line in ctx.report.sections["Skipped duplicates"])
+    assert any("PT Baseline Kopi" in line for line in ctx.report.sections["Skipped duplicates"])
     row = rows["Koperasi Gayo Mountain"]
     assert row["Email"] == "export@gayomountain.co.id" and row["State"] == "Aceh"
     assert row["Phone"] == "+62 643 555 0101 / WhatsApp +62 812 5550 0102"
@@ -89,8 +105,10 @@ def test_discovers_compares_and_drafts_enquiry(cfg, tmp_path, agent, mailbox, ma
     assert "Swami K" in msg.get_content()
     # The email writer sees the demand and the logistics line, but not your private comparison.
     email_prompt = next(p for kind, p in agent.calls if kind == "structured")
-    assert "Soho Roasters: LCL trial of 600 kg" in email_prompt and "already arranged" in email_prompt
+    assert "Hills Roasters: LCL trial of 600 kg" in email_prompt and "already arranged" in email_prompt
     assert "Certified and publishes" not in email_prompt and "Email the export desk" not in email_prompt
+    # Nothing about the current vendor (name or prices) ever reaches a supplier.
+    assert "Baseline Kopi" not in email_prompt and "4.53" not in email_prompt
 
     # The next run finds nothing new and drafts nothing twice.
     agent.research_queue = [ResearchResult(data={"suppliers": [supplier()]})]
@@ -119,7 +137,7 @@ def test_regular_leads_run_ignores_suppliers_until_the_workbook_exists(cfg, tmp_
 
 
 def test_followup_after_three_days(cfg, tmp_path, agent, mailbox, make_ctx):
-    set_cfg(cfg, tmp_path, demand="Soho Roasters: LCL trial of 600 kg, then one 20ft FCL per quarter")
+    set_cfg(cfg, tmp_path, demand="Hills Roasters: LCL trial of 600 kg, then one 20ft FCL per quarter")
     cfg.data["followup"]["workbooks"] = []
     agent.research_queue = [ResearchResult(data={"suppliers": [supplier()]})]
     ctx = make_ctx("suppliers", pages=PAGES)
@@ -143,7 +161,8 @@ def test_followup_after_three_days(cfg, tmp_path, agent, mailbox, make_ctx):
     [msg] = mailbox.drafts
     assert msg["Subject"].startswith("Re: ") and msg["In-Reply-To"] == "<first@origincrest>"
     prompt = agent.calls[-1][1]
-    assert "(supplier)" in prompt and "Soho Roasters" in prompt and "Certified and publishes" not in prompt
+    assert "(supplier)" in prompt and "Hills Roasters" in prompt and "Certified and publishes" not in prompt
+    assert "Baseline Kopi" not in prompt and "4.53" not in prompt
     row = sheet(cfg)["Koperasi Gayo Mountain"]
     assert row["Follow-ups drafted"] == 1
     assert row["Next action date"].date() == TODAY + timedelta(days=6)

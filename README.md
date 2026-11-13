@@ -9,7 +9,7 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 | 1 | `discover` | Weekly (Mon 6:30) | Finds new leads on the web, separately for each workbook (below). Skips anything already in that workbook, then adds new rows with status **New - to review** to two tabs: one for Adelaide / SA, one for all other states. |
 | 2 | `leads` | Every 2 h, 7:00-19:00 (and right after discovery) | Turns each new lead into a draft written from its own row. Freight forwarders, customs brokers and 3PLs get a tailored **RFQ**. Coffee businesses are researched first (what they sell, size, sourcing, current Indonesian coffees, fit 0-100 for Sumatra / Sulawesi / Java / Flores), then get a personalised **intro email**. |
 | 3 | `followup` | Weekdays 7:30 | Reads the RFQ workbook (e.g. its **contacts** tab) and every new-lead tab, finds **Open** rows, or rows with a **Date sent** and no status, with no reply by the row's **Followup date** (or after 5 days for quotes, 10 for leads), checks your mailbox for replies first, then drafts a threaded follow-up and updates **Last contacted** and **Followup date**. Rows whose **Notes** say "need to be called" get a **[CALL FIRST]** draft with the phone number and call points. |
-| 5 | `suppliers` | Every 3 days (6:00) | Finds **Indonesian green-coffee suppliers** (exporters, cooperatives with an export licence, mills), compares each with your current vendor (PT Putra Pulau), and adds them to their own workbook with a fit score, the comparison, verified contact details and a suggested way to reach them. Then drafts a **sourcing enquiry** to each: who OriginCrest is, that it's ready to import, the demand (LCL trial, then FCL) and that freight and warehousing are arranged. Unanswered enquiries get a follow-up draft after 3 days (workflow 3). |
+| 5 | `suppliers` | Every 3 days (6:00) | Finds **Indonesian green-coffee suppliers** (exporters, cooperatives with an export licence, mills), compares each with your current vendor, and adds them to their own workbook with a fit score, the comparison, verified contact details and a suggested way to reach them. Then drafts a **sourcing enquiry** to each: who OriginCrest is, that it's ready to import, the demand (LCL trial, then FCL) and that freight and warehousing are arranged. Unanswered enquiries get a follow-up draft after 3 days (workflow 3). |
 | 4 | `drive-sync` | Checks every 15 min | When a file in the OneDrive `Origincrest` folder (or a subfolder) has changed, copies it to Google Drive (`Business > Origincrest files synced from laptop`). With no changes it does nothing: no copy, no report. Never deletes anything; files that disappear locally are just reported. |
 
 | Workbook | New leads it gets | Tabs | Email |
@@ -159,17 +159,22 @@ styled like your existing headers, and Excel tables and filters are stretched to
 
 ## Supplier search (`suppliers`)
 
-For finding suppliers yourself, without going through PT Putra Pulau or a partner.
+For finding suppliers yourself, without going through your current vendor or a partner.
+
+> **This repository is public.** Your customer, your demand and your vendor's prices go in `config.yaml`,
+> which is never committed. Don't put them in `config.example.yaml` or anywhere else in this folder.
 
 1. **Tell it what you're buying.** In `config.yaml`:
    ```yaml
    sourcing:
      intro: 'OriginCrest is an Adelaide-based importer of Indonesian single-origin green coffee.'
-     demand: 'Soho Roasters: LCL trial of ... kg of ..., then 1 x 20ft FCL (about ... t) every ...'
+     demand: '<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL (about ... t) every ...'
    suppliers:
      baseline_vendor:
-       name: PT Putra Pulau
+       name: '<current vendor>'
        profile: 'Origins and grades offered, FOB prices quoted, minimum order, payment terms, responsiveness'
+     priority_focus:            # optional: searched first, one per run, until you remove them
+       - 'Robusta Grade 1 natural from Dampit (Malang, East Java): exporters shipping from Surabaya'
    ```
    `demand` goes into every enquiry, word for word. Left blank, drafts carry `[placeholders]` for the
    customer and the LCL / FCL quantities, and the row's notes say to fill them in. `profile` is what each new
@@ -184,7 +189,8 @@ For finding suppliers yourself, without going through PT Putra Pulau or a partne
 3. **Schedule it**: run `install_tasks.ps1` again. It adds **5 Suppliers**, every 3 days at 6:00
    (`-SuppliersEveryDays 3 -SuppliersTime 06:00`).
 
-Each run searches two regions or supplier types and moves on to the next two at the following run (Gayo,
+Each run searches two regions or supplier types (with `priority_focus` set: the next priority search plus one
+from the rotation) and moves on to the next two at the following run (Gayo,
 Mandheling / Lintong, Toraja, Java, Flores and Bali, certified cooperatives, export houses, trade-show
 exhibitors, exporters already shipping to Australia, and so on), so it keeps finding new suppliers. A supplier
 is added once: deleting its row doesn't bring it back.
@@ -193,7 +199,7 @@ What you get per supplier, in `New Suppliers - Indonesia`: contact details (emai
 if they are published on the supplier's own pages; `Origins / coffees`, `Certifications`, `Export capability`;
 `Fit score (0-100)`, `Comparison with current vendor` and `Suggested approach` (which channel to open with,
 and what to lead with). Those last three are for you: the email writer never sees them, and enquiries never
-mention another supplier. The run report (`latest_suppliers.md`) lists the comparisons together.
+mention another supplier. Your vendor's name and prices are only used for the comparison, never in an email. The run report (`latest_suppliers.md`) lists the comparisons together.
 
 The enquiry is saved to Drafts like every other email, the status becomes `Enquiry drafted - to review`, and
 once you send it the row turns `Open`. With no reply after 3 days (`followup.supplier_days`), the weekday

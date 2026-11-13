@@ -52,8 +52,9 @@ discovery:
 # current vendor, then a sourcing-enquiry draft for each. Follow-ups after followup.supplier_days.
 suppliers:
   tab: New Suppliers - Indonesia
+  # The repository is public: put your vendor, customer and prices in config.yaml only.
   baseline_vendor:
-    name: PT Putra Pulau
+    name: ''                    # your current vendor
     # What you know about them: origins and grades, FOB prices quoted, minimum order, payment terms,
     # certifications, how responsive they are. New suppliers are compared against this.
     profile: ''
@@ -61,12 +62,13 @@ suppliers:
   max_drafts_per_run: 8
   min_fit_score_for_draft: 50
   extra_focus: []               # more regions / supplier types to search, e.g. ['Kintamani natural-process lots']
+  priority_focus: []            # searched first, one per run, e.g. ['Dampit robusta G1 natural exporters, Surabaya']
 
 # What the supplier enquiries say about OriginCrest as a buyer. `demand` is used word for word; if it's
 # blank, drafts carry [placeholders] for the customer and the LCL / FCL quantities.
 sourcing:
   intro: ''                     # e.g. 'OriginCrest is an Adelaide-based importer of Indonesian single-origin green coffee.'
-  demand: ''                    # e.g. 'Soho Roasters: LCL trial of ... kg of ..., then 1 x 20ft FCL (about ... t) every ...'
+  demand: ''                    # e.g. '<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL (about ... t) every ...'
   logistics: 'Sea freight, customs and biosecurity clearance and warehousing in Australia are already arranged.'
   wanted: [Sumatra, Sulawesi, Java, Flores]
 

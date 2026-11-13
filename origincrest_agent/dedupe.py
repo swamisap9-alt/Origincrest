@@ -34,7 +34,7 @@ _SECOND_LEVEL_SUFFIXES = {"com.au", "net.au", "org.au", "asn.au", "id.au", "edu.
 
 _LEGAL_WORDS = {"pty", "ltd", "limited", "proprietary", "inc", "llc", "co", "company", "corp", "corporation",
                 "holdings", "the", "and", "australia", "aust", "au", "group", "trading", "as", "t",
-                # Indonesian company forms: "PT Putra Pulau" is "Putra Pulau"
+                # Indonesian company forms: "PT Kopi Nusantara" is "Kopi Nusantara"
                 "pt", "cv", "ud", "tbk", "persero"}
 _GENERIC_WORDS = {"coffee", "coffees", "roasters", "roaster", "roastery", "roasting", "roasted", "espresso",
                   "freight", "logistics", "forwarding", "forwarders", "international", "global", "services",

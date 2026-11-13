@@ -47,13 +47,19 @@ FOCUS = (
 
 
 def run_focus(cfg, today) -> list[str]:
-    """This run's search themes: the next few from the rotation (it moves on every `every_days` days)."""
+    """This run's search themes (they move on every `every_days` days).
+
+    With `priority_focus` set, each run searches the next priority theme first, then fills the rest of
+    `focus_per_run` from the general rotation, so urgent needs are covered without stopping discovery."""
     sc = cfg["suppliers"]
     pool = list(FOCUS) + [f for f in (_filled(x) for x in sc.get("extra_focus") or []) if f]
-    per_run = max(1, min(int(sc["focus_per_run"]), len(pool)))
+    priority = [f for f in (_filled(x) for x in sc.get("priority_focus") or []) if f]
+    per_run = max(1, int(sc["focus_per_run"]))
     run_number = today.toordinal() // max(1, int(sc["every_days"]))
-    start = (run_number * per_run) % len(pool)
-    return [pool[(start + i) % len(pool)] for i in range(per_run)]
+    picked = [priority[run_number % len(priority)]] if priority else []
+    rest = min(per_run - len(picked), len(pool))
+    start = (run_number * max(rest, 1)) % len(pool)
+    return picked + [pool[(start + i) % len(pool)] for i in range(rest)]
 
 
 def ensure_workbook(cfg) -> Path:

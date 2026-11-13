@@ -128,7 +128,8 @@ DEFAULTS: dict[str, Any] = {
         "tab": "New Suppliers - Indonesia",
         # The vendor every find is compared with. `profile` is what you know about them (origins, grades,
         # prices, minimums, terms, how responsive they are); the comparison is only as good as this.
-        "baseline_vendor": {"name": "PT Putra Pulau", "profile": ""},
+        # Set both in config.yaml (never committed): the repository is public.
+        "baseline_vendor": {"name": "", "profile": ""},
         "every_days": 3,                 # how often the scheduled task runs; also rotates the search focus
         "focus_per_run": 2,              # how many regions / supplier types each run searches
         "candidates_per_focus": 6,
@@ -141,18 +142,24 @@ DEFAULTS: dict[str, Any] = {
         "email_effort": "medium",
         # Extra regions or supplier types to search, on top of the built-in rotation.
         "extra_focus": [],
+        # Searches for what you need now (e.g. the coffees in a customer's quote): every run takes the next
+        # one of these, plus focus_per_run - 1 from the rotation.
+        "priority_focus": [],
     },
     # What the supplier emails say about OriginCrest as a buyer. Blank values become [placeholders]
     # in the draft for you to fill in; the agent never invents volumes, prices or dates.
     "sourcing": {
         "intro": "",       # who OriginCrest is, e.g. "Adelaide-based importer of Indonesian green coffee"
-        "demand": "",      # e.g. "Soho Roasters: LCL trial of ... bags of ..., then 1 x 20ft FCL every ..."
+        "demand": "",      # e.g. "<customer>: LCL trial of ... kg of ..., then 1 x 20ft FCL every ..."
         "logistics": ("Sea freight, customs and biosecurity clearance and warehousing in Australia are "
                       "already arranged."),
         "wanted": ["Sumatra", "Sulawesi", "Java", "Flores"],
-        "ask": ["current offer list with FOB prices", "minimum order for LCL and for a 20ft FCL",
-                "lead time and loading port", "samples", "payment terms",
-                "export documents (phytosanitary certificate, certificate of origin, ICO mark)"],
+        "ask": ["FOB price per kg at your loading port, for the trial (LCL) quantity and for a 20ft FCL",
+                "whether that price includes export documents and charges (PEB, phytosanitary certificate, "
+                "fumigation, ICO certificate / certificate of origin)",
+                "your minimum order, and whether you can prepare a part-container (LCL) shipment",
+                "preparation time after deposit, and your loading port",
+                "green samples for approval before shipment", "payment terms"],
     },
     "leads": {
         # Workflow 2 works on the new-lead tabs above, plus any tabs you list here.
