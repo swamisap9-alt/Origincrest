@@ -90,8 +90,10 @@ Open ─(reply found)───────────────────�
   The email writer never sees them, and enquiries never mention another supplier or your vendor.
 - **Contact details** are kept only if they appear on the supplier's own pages; anything dropped is explained
   in `Agent notes`. WhatsApp numbers go in the `Phone` column.
-- **No unsubscribe footer:** supplier enquiries are purchase enquiries, not marketing, so they carry your
-  signature only. A supplier who replies "unsubscribe" is still never contacted again.
+- **Opt-out:** like your RFQs, every enquiry and follow-up ends with one line ("If you'd rather not receive
+  requests like this from OriginCrest, reply "unsubscribe" and we won't contact you again.") and carries a
+  List-Unsubscribe header. Unsubscribe replies are picked up by the follow-up run and that supplier is never
+  contacted again.
 - **Duplicates:** a supplier is added once (`PT` / `CV` / `UD` and `Tbk` are ignored when comparing names), your
   vendor is never added, and deleting a row doesn't bring it back.
 - Reports: `%LOCALAPPDATA%\OriginCrestAgent\suppliers\reports\latest_supplier-search.md` (and

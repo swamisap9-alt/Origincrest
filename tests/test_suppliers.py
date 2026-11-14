@@ -166,7 +166,10 @@ def test_discovers_compares_and_drafts_enquiry(scfg, agent, mailbox, make_sctx):
 
     [msg] = mailbox.drafts
     assert msg["To"] == "export@gayomountain.co.id" and msg["X-OriginCrest-Agent"].startswith("supplier;")
-    assert msg["List-Unsubscribe"] is None and "unsubscribe" not in msg.get_content()
+    # the same one-line opt-out as RFQs, not the marketing footer
+    assert msg["List-Unsubscribe"] == "<mailto:hello@origincrest.com.au?subject=unsubscribe>"
+    assert "reply \"unsubscribe\" and we won't contact you again" in msg.get_content()
+    assert "within 5 business days" not in msg.get_content()
     assert "Swami K" in msg.get_content()
     email_prompt = next(p for kind, p in agent.calls if kind == "structured")
     assert DEMAND in email_prompt and "already arranged" in email_prompt
@@ -418,3 +421,19 @@ def test_enquiry_and_followup_drafts_in_a_real_mailbox(scfg, agent, make_sctx):
     assert reply.subject == f"Re: Green coffee import enquiry {tag}"
     assert draft.message_id in reply.references
     assert sheet(scfg)[f"PT Kopi {tag}"]["Follow-ups drafted"] == 1
+
+
+def test_unsubscribe_reply_stops_all_contact(scfg, agent, mailbox, make_sctx):
+    agent.research_queue = [ResearchResult(data={"suppliers": [supplier()]})]
+    ctx = make_sctx()
+    run_suppliers(ctx)
+    run_supplier_drafts(ctx)
+    draft = mailbox.drafts.pop()
+    mailbox.sent.append(mail("Sent", utc(TODAY, 10), "hello@origincrest.com.au", "export@gayomountain.co.id",
+                             draft["Subject"], "Dear team", "<first@origincrest>"))
+    mailbox.inbox.append(mail("INBOX", utc(TODAY + timedelta(days=1), 9), "export@gayomountain.co.id",
+                              "hello@origincrest.com.au", "Re: " + draft["Subject"], "unsubscribe"))
+    assert run_supplier_followup(make_sctx("supplier-followup", today=TODAY + timedelta(days=4))) == 0
+    assert sheet(scfg)["Koperasi Gayo Mountain"]["Status"] == "Unsubscribed - do not contact"
+    assert State(scfg.data_dir / "state.db").is_suppressed("export@gayomountain.co.id")
+    assert not mailbox.drafts

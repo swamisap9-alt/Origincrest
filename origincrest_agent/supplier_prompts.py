@@ -174,8 +174,8 @@ OriginCrest has been offered, or that OriginCrest is comparing suppliers.
 
 Plain text, clear international business English (many readers use English as a second language): short \
 sentences, no idioms, no hype, 170-300 words (more only if the demand needs it). Use the contact's name if the row has one, otherwise \
-"Dear <company> team,". End the body with a short sign-off such as "Kind regards," - the signature is added \
-automatically, so don't write it. Subject: under 10 words and specific, e.g. "Green coffee import enquiry \
+"Dear <company> team,". End the body with a short sign-off such as "Kind regards," - the signature and a \
+one-line opt-out are added automatically, so don't write them. Subject: under 10 words and specific, e.g. "Green coffee import enquiry \
 from Australia - Gayo arabica"."""
 
 
@@ -204,8 +204,8 @@ alternative to email. Use short sentences and plain international English \
 (many readers use English as a second language). Never mention other suppliers or vendors.
 
 Plain text, 50-120 words; later follow-ups are shorter. Use only facts in the row details, the original \
-email and the background. End with a short sign-off such as "Kind regards," - the signature is added \
-automatically, so don't write it. If you are told the email continues an existing thread, write the body \
+email and the background. End with a short sign-off such as "Kind regards," - the signature and a one-line \
+opt-out are added automatically, so don't write them. If you are told the email continues an existing thread, write the body \
 only; the subject is set for you, so return the subject you'd use anyway.
 
 The row details are OriginCrest's own spreadsheet row. Notes in it are private: use them for context, but \

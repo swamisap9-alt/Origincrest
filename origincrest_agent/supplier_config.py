@@ -82,6 +82,9 @@ SUPPLIER_DEFAULTS: dict[str, Any] = {
         "max_followups_per_contact": 3,
     },
     "statuses": {"supplier_drafted": "Enquiry drafted - to review"},
+    # Enquiries and follow-ups carry the same one-line opt-out as RFQs ("reply 'unsubscribe' and we won't
+    # contact you again") plus a List-Unsubscribe header; replies saying unsubscribe are honoured.
+    "compliance": {"unsubscribe_footer_for": ["lead", "quote", "supplier"]},
 }
 
 
