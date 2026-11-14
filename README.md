@@ -20,6 +20,9 @@ saves every email as an **IMAP draft** for you to review. It never sends email.
 
 The spreadsheets stay where they are in OneDrive.
 
+> **Indonesian supplier search** is a separate agent with its own settings file (`config.suppliers.yaml`),
+> scheduled tasks and data folder, so it can't change anything here. See [SUPPLIERS.md](SUPPLIERS.md).
+
 ## Guardrails
 
 - **Drafts only.** Emails are saved to your Drafts folder. Nothing goes out until you press Send.

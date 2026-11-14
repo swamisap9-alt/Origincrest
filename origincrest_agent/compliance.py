@@ -61,7 +61,7 @@ class Sender:
     problems: list[str] = field(default_factory=list)
 
     def unsubscribe_footer(self, source_url: str = "", record_type: str = "lead") -> str:
-        if record_type == "quote":
+        if record_type in ("quote", "supplier"):  # purchase requests: RFQs, and the supplier agent's enquiries
             return (f"If you'd rather not receive requests like this from {self.business_name}, reply "
                     "\"unsubscribe\" and we won't contact you again.")
         where = host_of(source_url)

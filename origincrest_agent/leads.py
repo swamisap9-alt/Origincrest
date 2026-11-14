@@ -27,6 +27,16 @@ from .workbook import Row, WorkbookStore
 AGENT_NAME = "OriginCrest Agent"
 _PLACEHOLDER = re.compile(r"\[[^\]]{3,80}\]")
 
+# Per kind of row: draft workflow name, record type (footer / follow-up timing), follow-up days setting,
+# subject used if the model returns none, report label, and the status once drafted.
+# "supplier" rows exist only in the supplier agent's own workbook (see suppliers.py).
+_KINDS = {
+    "buyer": ("intro", "lead", "lead_days", "Indonesian single-origin green coffee", "Intro", "intro_drafted"),
+    "freight": ("rfq", "quote", "quote_days", "Request for quotation", "RFQ", "rfq_drafted"),
+    "supplier": ("supplier", "supplier", "supplier_days", "Green coffee import enquiry from Australia",
+                 "Supplier enquiry", "supplier_drafted"),
+}
+
 
 def _first_email(text: str) -> str:
     match = EMAIL_RE.search(text or "")
@@ -34,7 +44,7 @@ def _first_email(text: str) -> str:
 
 
 def _candidates(ctx: RunContext, stores: dict[str, WorkbookStore],
-                redraft: list[str] | None = None) -> dict[str, list[Row]]:
+                redraft: list[str] | None = None, only_kind: str | None = None) -> dict[str, list[Row]]:
     """Rows waiting for a draft - or, with `redraft`, the rows of those companies whatever their status."""
     cfg = ctx.cfg
     eligible = {s.strip().lower() for s in cfg["leads"]["eligible_statuses"]}
@@ -48,7 +58,7 @@ def _candidates(ctx: RunContext, stores: dict[str, WorkbookStore],
                 continue
             for row in view.rows():
                 company = row.text("company")
-                if not company:
+                if not company or (only_kind and row.kind != only_kind):
                     continue
                 status = row.text("status").lower()
                 if redraft is not None:
@@ -178,9 +188,10 @@ class LeadRun:
     # one lead --------------------------------------------------------------
     def _draft(self, key: str, rows: list[Row], values: dict, notes: list[str], *, email: str, contact: str,
                kind: str, line: str, compose: Callable[[], dict]) -> None:
-        """Shared checks, then compose and save the draft (intro for buyers, RFQ for freight)."""
+        """Shared checks, then compose and save the draft (intro for buyers, RFQ for freight, enquiry for
+        suppliers)."""
         cfg, report, row = self.cfg, self.report, rows[0]
-        workflow = "intro" if kind == "buyer" else "rfq"
+        workflow, record_type, days_key, fallback, label, drafted_status = _KINDS[kind]
         status = row.text("status").lower()
         if not email:
             report.add("No public email", line)
@@ -213,7 +224,7 @@ class LeadRun:
                 earlier = mailbox.messages_to(email, self.ctx.today - timedelta(days=365))
                 if earlier and earlier[0].when:
                     sent_on = earlier[0].when.astimezone().date()
-                    days = cfg["followup"]["lead_days" if kind == "buyer" else "quote_days"]
+                    days = cfg["followup"][days_key]
                     report.add("Already contacted", f"{line} - you emailed {email} on {fmt_date(sent_on)}")
                     values.update(last_contacted=sent_on, next_action_date=sent_on + timedelta(days=days))
                     self._finish(rows, values, notes, f"Found your email to {email} from {fmt_date(sent_on)} in "
@@ -233,13 +244,15 @@ class LeadRun:
             except AgentError as exc:
                 report.add("Errors", f"{row.text('company')}: drafting failed - {exc}")
                 return
-            record_type = "lead" if kind == "buyer" else "quote"
             body = sender.finish_body(cfg, draft["body"], record_type=record_type, source_url=row.text("source_url"))
-            fallback = "Indonesian single-origin green coffee" if kind == "buyer" else "Request for quotation"
+            # Intros and RFQs always carry List-Unsubscribe; supplier enquiries (purchase enquiries) only if
+            # the supplier agent's compliance settings ask for a footer.
+            unsubscribe = (sender.unsubscribe_email if kind != "supplier"
+                           or compliance.needs_unsubscribe(cfg, record_type) else "")
             msg = build_message(
                 from_name=sender.name, from_addr=sender.email, to_addr=email, to_name=contact,
                 subject=clean(draft["subject"]) or fallback, body=body,
-                unsubscribe_addr=sender.unsubscribe_email, agent_tag=f"{workflow}; {row.ref}")
+                unsubscribe_addr=unsubscribe, agent_tag=f"{workflow}; {row.ref}")
             self.draft_budget -= 1
             if _PLACEHOLDER.search(draft["body"]):
                 notes.append("Fill in the [bracketed] details before sending")
@@ -255,11 +268,10 @@ class LeadRun:
             self.drafted += 1
             subject, created = msg["Subject"], self.ctx.today
         values.update(draft_created=created, draft_subject=subject)
-        label = "Intro" if kind == "buyer" else "RFQ"
         report.add(f"{label} drafted (in your Drafts folder)", f"{line} -> {email}: \"{subject}\"")
         report.count(f"{label.lower()} drafts")
         self._finish(rows, values, notes, f"{label} draft saved {fmt_date(created)} - review and send it from Drafts",
-                     cfg.status("intro_drafted" if kind == "buyer" else "rfq_drafted"))
+                     cfg.status(drafted_status))
 
     def buyer(self, key: str, rows: list[Row]) -> None:
         cfg, lc, row = self.cfg, self.lc, rows[0]

@@ -32,6 +32,8 @@ def _utc(dt: datetime) -> datetime:
 
 
 def _record_type(row: Row) -> str:
+    if row.kind == "supplier":  # only in the supplier agent's own workbook
+        return "supplier"
     return "lead" if row.kind == "buyer" else "quote"
 
 
@@ -57,7 +59,7 @@ def _call_block(row: Row, *, step: int, days_since: int, last: date, rtype: str,
                 has_email: bool) -> str:
     who = ", ".join(x for x in (row.text("contact_name"), row.text("contact_role")) if x)
     phone = row.text("phone") or "(no phone number on the row - check their website)"
-    sent_what = "RFQ" if rtype == "quote" else "first email"
+    sent_what = {"quote": "RFQ", "supplier": "sourcing enquiry"}.get(rtype, "first email")
     lines = [
         "=" * 22 + " CALL FIRST " + "=" * 22,
         f"Your note: {row.text('user_notes')}",
@@ -91,6 +93,8 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             report.add("Errors", str(exc))
     open_statuses = {_norm(s) for s in fc["open_statuses"]}
     awaiting_send = {_norm(cfg.status("intro_drafted")), _norm(cfg.status("rfq_drafted"))}
+    if cfg["statuses"].get("supplier_drafted"):  # set only by the supplier agent's config
+        awaiting_send.add(_norm(cfg.status("supplier_drafted")))
     call_phrases, done_phrases = fc.get("call_phrases") or [], fc.get("done_phrases") or []
     groups: dict[str, list[Row]] = {}
     for store in stores.values():
@@ -128,7 +132,10 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
             row = rows[0]
             company = row.text("company") or "(no company name)"
             rtype = _record_type(row)
-            days = fc["lead_days"] if rtype == "lead" else fc["quote_days"]
+            if rtype == "supplier":
+                days = fc["supplier_days"]
+            else:
+                days = fc["lead_days"] if rtype == "lead" else fc["quote_days"]
             label = f"{company} [{rtype}, {row.sheet.title}]"
             match = EMAIL_RE.search(row.text("email"))
             email = norm_email(match.group(0)) if match else ""
@@ -253,13 +260,22 @@ def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
 
             threaded = bool(last_sent and last_sent.message_id)
             try:
-                draft = ctx.agent.structured(
-                    system=FOLLOWUP_SYSTEM,
-                    prompt=followup_prompt(record_type=rtype, number=step, row_context=row.email_context(),
-                                           original=(last_sent.text[:1500] if last_sent else ""),
-                                           days_since=overdue, threaded=threaded, cfg=cfg, call=call,
-                                           has_email=bool(email)),
-                    schema=FOLLOWUP_SCHEMA, effort=fc["effort"])
+                original = last_sent.text[:1500] if last_sent else ""
+                if rtype == "supplier":
+                    from .supplier_prompts import SUPPLIER_FOLLOWUP_SYSTEM, supplier_followup_prompt
+                    from .schema import SUPPLIER_PRIVATE
+
+                    system = SUPPLIER_FOLLOWUP_SYSTEM
+                    prompt = supplier_followup_prompt(
+                        number=step, row_context=row.email_context(skip=SUPPLIER_PRIVATE), original=original,
+                        days_since=overdue, threaded=threaded, cfg=cfg, call=call, has_email=bool(email))
+                else:
+                    system = FOLLOWUP_SYSTEM
+                    prompt = followup_prompt(record_type=rtype, number=step, row_context=row.email_context(),
+                                             original=original, days_since=overdue, threaded=threaded, cfg=cfg,
+                                             call=call, has_email=bool(email))
+                draft = ctx.agent.structured(system=system, prompt=prompt, schema=FOLLOWUP_SCHEMA,
+                                             effort=fc["effort"])
             except AgentError as exc:
                 report.add("Errors", f"{company}: follow-up drafting failed - {exc}")
                 continue
