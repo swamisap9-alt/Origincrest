@@ -324,6 +324,11 @@ def run_supplier_drafts(ctx: RunContext, max_drafts: int | None = None, redraft:
     try:
         for key, rows in groups.items():
             run.supplier(key, rows)
+        if run.drafted and run.mailbox is not None:
+            ctx.report.add("Where the drafts are", (
+                f"Saved to the server folder '{run.mailbox.drafts}' of {ctx.cfg['email']['username']}. In Outlook "
+                "that is the account's own Drafts folder (it can sit under Inbox), not 'Drafts (This computer "
+                "only)'. Press F9 to sync. scripts\\suppliers.cmd drafts lists them."))
     finally:
         if run.mailbox is not None:
             run.mailbox.close()

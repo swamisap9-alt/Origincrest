@@ -103,6 +103,7 @@ Open ─(reply found)───────────────────�
 
 ```
 scripts\suppliers.cmd check [--api]
+scripts\suppliers.cmd drafts     # which mail folder enquiries go to, and the drafts saved there
 scripts\suppliers.cmd search [--dry-run] [--max-rows N] [--max-drafts N] [--focus "..."] [--no-drafts]
 scripts\suppliers.cmd draft [--dry-run] [--max-drafts N]
 scripts\suppliers.cmd redraft "Kopi Gayo" [--dry-run]

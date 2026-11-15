@@ -13,7 +13,7 @@ import traceback
 
 from datetime import datetime
 
-from .cli import _context, _finish, _print_sender
+from .cli import _context, _finish, _print_sender, cmd_drafts
 from .config import DEFAULTS, ConfigError, expand_path
 from .llm import ClaudeAgent
 from .mailer import Mailbox
@@ -157,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("check", help="check settings, workbook, IMAP login and API key")
     p.add_argument("--api", action="store_true", help="also make a tiny Claude API call")
+    sub.add_parser("drafts", help="show which mail folder enquiries are saved to, and the drafts saved there")
     p = sub.add_parser("search", help="find suppliers, compare them with your vendor, then draft enquiries")
     p.add_argument("--dry-run", action="store_true", help="search and report, but write nothing")
     p.add_argument("--max-rows", type=int, help="cap on new suppliers for this run")
@@ -185,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "check":
             return cmd_check(cfg, args)
+        if args.command == "drafts":
+            return cmd_drafts(cfg, args)
         if args.command in COMMANDS_NEEDING_SETTINGS and cfg.source is None:
             message = (f"{supplier_config_path(args.config)} not found. Create it from the example "
                        f"(Copy-Item config.suppliers.example.yaml {SUPPLIER_CONFIG_NAME}) and fill it in.")

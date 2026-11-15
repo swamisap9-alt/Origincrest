@@ -171,6 +171,7 @@ def test_discovers_compares_and_drafts_enquiry(scfg, agent, mailbox, make_sctx):
     assert "reply \"unsubscribe\" and we won't contact you again" in msg.get_content()
     assert "within 5 business days" not in msg.get_content()
     assert "Swami K" in msg.get_content()
+    assert "server folder" in ctx.report.sections["Where the drafts are"][0]
     email_prompt = next(p for kind, p in agent.calls if kind == "structured")
     assert DEMAND in email_prompt and "already arranged" in email_prompt
     # Private assessment and everything about the current vendor stay out of the email.
