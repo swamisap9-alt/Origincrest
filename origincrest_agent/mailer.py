@@ -418,6 +418,39 @@ class Mailbox:
                 found.setdefault(info.message_id or f"{folder}:{info.uid}", info)
         return sorted(found.values(), key=_sort_key, reverse=True)
 
+    def raw_messages_from(self, addresses: list[str], domains: list[str], since: date,
+                          limit: int = 50, max_bytes: int | None = None) -> list[tuple[str, str, bytes]]:
+        """Whole messages (with attachments) received from these addresses or domains since a date:
+        (folder, uid, raw bytes), oldest first. Messages larger than max_bytes (default: max_fetch_bytes)
+        are left out."""
+        max_bytes = max_bytes or self.max_fetch_bytes
+        found: list[tuple[str, str, bytes]] = []
+        for folder in self.reply_folders:
+            uids: set[str] = set()
+            for who in [*addresses, *domains]:
+                if who:
+                    uids |= set(self._search(folder, ["SINCE", imap_date(since), "FROM", quote(who)]))
+            wanted = sorted(uids, key=int)[-limit:]
+            if not wanted:
+                continue
+            typ, sizes = self.imap.uid("FETCH", ",".join(wanted), "(RFC822.SIZE)")
+            size_by_uid: dict[str, int] = {}
+            for item in sizes or []:
+                raw = item[0] if isinstance(item, tuple) else item
+                if isinstance(raw, bytes):
+                    m_uid, m_size = re.search(rb"UID (\d+)", raw), re.search(rb"RFC822\.SIZE (\d+)", raw)
+                    if m_uid and m_size:
+                        size_by_uid[m_uid.group(1).decode()] = int(m_size.group(1))
+            for uid in wanted:
+                if size_by_uid.get(uid, 0) > max_bytes:
+                    log.info("Skipping message %s in %s: larger than %d bytes", uid, folder, max_bytes)
+                    continue
+                typ, data = self.imap.uid("FETCH", uid, "(BODY.PEEK[])")
+                raw = next((d[1] for d in data or [] if isinstance(d, tuple) and len(d) > 1), None)
+                if raw:
+                    found.append((folder, uid, raw))
+        return found
+
     def messages_to(self, address: str, since: date) -> list[MailInfo]:
         """Messages in your Sent folder(s) addressed to `address` since a date, newest first."""
         found: list[MailInfo] = []

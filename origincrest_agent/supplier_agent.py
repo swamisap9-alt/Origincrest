@@ -22,7 +22,8 @@ from .runtime import AgentBusy, AgentLock, ChangeSet, commit
 from .supplier_config import SUPPLIER_CONFIG_NAME, WORKBOOK, load_supplier_config, supplier_config_path
 from .utils import keep_awake, log, setup_logging, today_in
 
-COMMANDS_NEEDING_SETTINGS = ("search", "draft", "redraft", "followup")
+COMMANDS_NEEDING_SETTINGS = ("search", "draft", "redraft", "followup", "onboarding-scan", "onboarding-draft",
+                             "onboarding-template")
 
 
 def _config_failure(message: str) -> None:
@@ -129,6 +130,11 @@ def run_workflow(cfg, args) -> int:
                 run_supplier_drafts(ctx, redraft=args.companies)
             elif args.command == "followup":
                 run_supplier_followup(ctx, max_drafts=args.max_drafts)
+            elif args.command in ("onboarding-scan", "onboarding-draft"):
+                from .onboarding import run_onboarding
+
+                run_onboarding(ctx, suppliers=args.supplier or None, force=args.force,
+                               draft=args.command == "onboarding-draft", again=getattr(args, "again", False))
             elif args.command == "flush":
                 commit(ctx, ChangeSet())
     except AgentBusy as exc:
@@ -173,6 +179,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("followup", help="check replies and draft follow-ups to unanswered enquiries")
     p.add_argument("--dry-run", action="store_true", help="check and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)
+    for name, text in (("onboarding-scan", "read supplier emails and files, and update the onboarding workbook"),
+                       ("onboarding-draft", "onboarding-scan, then draft a pre-filled questionnaire email to each "
+                                            "supplier")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--supplier", action="append", help="only this supplier (part of its name); repeatable")
+        p.add_argument("--force", action="store_true", help="read everything again even if nothing new arrived")
+        p.add_argument("--dry-run", action="store_true", help="check and report, but save nothing")
+        if name == "onboarding-draft":
+            p.add_argument("--again", action="store_true", help="draft a new questionnaire even if one was drafted")
+    sub.add_parser("onboarding-template", help="save a blank questionnaire (Excel) in the onboarding folder")
     p = sub.add_parser("flush", help="write any supplier rows still queued (e.g. after Excel was open)")
     p.add_argument("--dry-run", action="store_true")
 
@@ -188,6 +204,11 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_check(cfg, args)
         if args.command == "drafts":
             return cmd_drafts(cfg, args)
+        if args.command == "onboarding-template":
+            from .onboarding import write_template
+
+            print(f"Saved: {write_template(cfg)}")
+            return 0
         if args.command in COMMANDS_NEEDING_SETTINGS and cfg.source is None:
             message = (f"{supplier_config_path(args.config)} not found. Create it from the example "
                        f"(Copy-Item config.suppliers.example.yaml {SUPPLIER_CONFIG_NAME}) and fill it in.")

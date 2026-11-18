@@ -29,6 +29,7 @@ agent writes settings files). To use different values for the supplier agent, pu
 
 | Workflow | Command | Scheduled | What it does |
 |---|---|---|---|
+| Onboarding | `onboarding-scan` / `onboarding-draft` | weekdays, 8:15 (scan only) | Reads replies and attachments from the suppliers you list, saves the files, and fills `Supplier_Onboarding.xlsx` with their answers to the onboarding questionnaire; `onboarding-draft` also drafts a pre-filled questionnaire email to each. |
 | Search | `search` | every 3 days, 6:00 | Searches two regions or supplier types per run (rotating; with `priority_focus` set, the next priority search plus one from the rotation). Adds new suppliers to `New Suppliers - Indonesia` with contact details that appear on the supplier's own pages, origins, certifications, export capability, a fit score, **Comparison with current vendor** and **Suggested approach**. Then drafts an enquiry to each. |
 | Follow-up | `followup` | weekdays, 7:45 | Reads the supplier workbook, picks up enquiries you've sent (from your Sent folder), checks for replies, and drafts a threaded follow-up when there's no reply after `followup.supplier_days` (3). Up to 3 per supplier. |
 | Draft | `draft` / `redraft "Name"` | after each search | Enquiries for suppliers you added to the tab yourself, or a new first draft after you deleted one. |
@@ -99,6 +100,45 @@ Open ─(reply found)───────────────────�
 - Reports: `%LOCALAPPDATA%\OriginCrestAgent\suppliers\reports\latest_supplier-search.md` (and
   `latest_supplier-followup.md`). Log: `...\suppliers\logs\agent.log`.
 
+## Supplier onboarding
+
+Once a supplier replies, the onboarding commands keep track of what they've told you against OriginCrest's
+onboarding questionnaire (31 questions in 6 sections: company and legal, coffees and quality, commercial terms,
+packaging and logistics, export documents and Australian biosecurity, compliance and references).
+
+List the suppliers under `onboarding.suppliers` in `config.suppliers.yaml`, then:
+
+```powershell
+scripts\suppliers.cmd onboarding-scan          # read their emails and files, update the workbook
+scripts\suppliers.cmd onboarding-draft         # the same, then draft a questionnaire email to each
+scripts\suppliers.cmd onboarding-template      # a blank questionnaire (Excel) in the onboarding folder
+```
+
+- **Files:** every attachment a supplier sends is saved to
+  `OriginCrest supplier onboarding\<Supplier>\Received\`. Put anything else you get from them (WhatsApp
+  exports, photos of a price list, documents from their website) into `<Supplier>\Add files here\`; it's read
+  on the next run. PDFs, Word (.docx), Excel (.xlsx), text and photos are read; old .doc / .xls files are listed
+  as not read.
+- **Workbook:** `OriginCrest supplier onboarding\Supplier_Onboarding.xlsx`:
+  - *Summary*: one row per supplier, with emails and files read, answered / missing / to confirm, red flags, and
+    where things stand.
+  - *Answers*: one row per supplier and question, with the answer, its source (file or email) and a status:
+    `Provided`, `Partly`, `Conflicting`, `From research - to confirm` (only your own research covers it) or
+    `Missing`.
+  - *Files*: every file and whether it was read.
+  - *Questionnaire*: the full question list.
+
+  **Your notes** and **Confirmed** are your columns; the agent keeps them every time it rewrites the workbook.
+- **Questionnaire email:** `onboarding-draft` saves one draft per supplier in their existing email thread, with
+  an Excel questionnaire attached. Column D is pre-filled with what they've already told you; they confirm it
+  and complete column E. When they send it back, the next scan reads their answers. It drafts once per
+  supplier (add `--again` for a new one) and never while another draft to them is waiting.
+- **Red flags:** anything to check before paying (payment to a personal account, company names that don't match
+  across documents, and so on) is listed in the Summary and the run report.
+- **Cost:** material goes to Claude only when something new has arrived; `--force` reads everything again.
+- **Schedule:** `install_supplier_tasks.ps1` adds **3 Supplier onboarding** (weekdays 8:15, `onboarding-scan`).
+  The questionnaire email is drafted only when you run `onboarding-draft`.
+
 ## Commands
 
 ```
@@ -108,6 +148,9 @@ scripts\suppliers.cmd search [--dry-run] [--max-rows N] [--max-drafts N] [--focu
 scripts\suppliers.cmd draft [--dry-run] [--max-drafts N]
 scripts\suppliers.cmd redraft "Kopi Gayo" [--dry-run]
 scripts\suppliers.cmd followup [--dry-run] [--max-drafts N]
+scripts\suppliers.cmd onboarding-scan [--supplier "Akan"] [--force] [--dry-run]
+scripts\suppliers.cmd onboarding-draft [--supplier "Akan"] [--again] [--dry-run]
+scripts\suppliers.cmd onboarding-template
 scripts\suppliers.cmd flush      # write rows still queued from a run when Excel was open
 ```
 

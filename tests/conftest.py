@@ -88,6 +88,10 @@ class FakeAgent:
         self.calls.append(("research", prompt))
         return self.research_queue.pop(0)
 
+    def structured_content(self, *, system, content, schema, effort) -> dict:
+        self.calls.append(("structured_content", content))
+        return self.structured_queue.pop(0)
+
     def structured(self, *, system, prompt, schema, effort) -> dict:
         self.calls.append(("structured", prompt))
         if self.structured_queue:
@@ -106,6 +110,8 @@ class FakeMailbox:
         self.drafts: list = []
         self.sent: list[MailInfo] = []
         self.inbox: list[MailInfo] = []
+        self.raw: list[tuple[str, str, bytes]] = []  # (folder, uid, whole message) for raw_messages_from
+        self.own_addresses = {"hello@origincrest.com.au"}
         self.connected = False
 
     def connect(self) -> None:
@@ -129,6 +135,16 @@ class FakeMailbox:
         hits = [m for m in self.inbox if (m.from_addr == address or (domain and m.from_addr.endswith("@" + domain)))
                 and m.when.date() >= since and not m.is_bounce]
         return sorted(hits, key=lambda m: m.when, reverse=True)
+
+    def raw_messages_from(self, addresses, domains, since, limit=50, max_bytes=None):
+        import email as _email
+
+        out = []
+        for folder, uid, raw in self.raw:
+            sender = str(_email.message_from_bytes(raw).get("From", "")).lower()
+            if any(a in sender for a in addresses) or any(d in sender for d in domains):
+                out.append((folder, uid, raw))
+        return out
 
     def learn_sender(self):
         return learn_sender(sorted(self.sent, key=lambda m: m.when, reverse=True))

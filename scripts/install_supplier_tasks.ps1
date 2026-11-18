@@ -5,7 +5,8 @@
 param(
     [int]$SearchEveryDays = 3,
     [string]$SearchTime = "06:00",
-    [string]$FollowupTime = "07:45"
+    [string]$FollowupTime = "07:45",
+    [string]$OnboardingTime = "08:15"
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -41,6 +42,10 @@ Add-SupplierTask "1 Supplier search" "search" $search `
 $weekdays = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $FollowupTime
 Add-SupplierTask "2 Supplier follow-up" "followup" $weekdays `
     "Weekdays: check supplier replies and draft follow-ups to enquiries unanswered after the set number of days."
+
+$onboarding = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $OnboardingTime
+Add-SupplierTask "3 Supplier onboarding" "onboarding-scan" $onboarding `
+    "Weekdays: read new emails and files from onboarding suppliers and update Supplier_Onboarding.xlsx."
 
 Write-Host ""
 Write-Host "Done. See them in Task Scheduler > Task Scheduler Library > OriginCrest Suppliers."

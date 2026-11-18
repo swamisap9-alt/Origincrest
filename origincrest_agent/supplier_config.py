@@ -31,8 +31,8 @@ WORKBOOK = "suppliers"  # internal name of the supplier workbook
 SHARED_SECTIONS = ("timezone", "claude", "email", "sender")
 # Sections that belong in config.suppliers.yaml; if they turn up in config.yaml they are ignored.
 SUPPLIER_SECTIONS = ("suppliers", "sourcing")
-KNOWN_KEYS = {"suppliers", "sourcing", "followup", "data_dir", "shared_config", "excel", "compliance",
-              *SHARED_SECTIONS}
+KNOWN_KEYS = {"suppliers", "sourcing", "followup", "onboarding", "data_dir", "shared_config", "excel",
+              "compliance", *SHARED_SECTIONS}
 
 SUPPLIER_DEFAULTS: dict[str, Any] = {
     "suppliers": {
@@ -80,6 +80,21 @@ SUPPLIER_DEFAULTS: dict[str, Any] = {
         "supplier_days": 3,
         "max_drafts_per_run": 15,
         "max_followups_per_contact": 3,
+    },
+    # Supplier onboarding (onboarding-scan / onboarding-draft): what each supplier has told you so far.
+    "onboarding": {
+        "folder": _ORIGINCREST + r"\OriginCrest supplier onboarding",
+        "workbook_name": "Supplier_Onboarding.xlsx",
+        "lookback_days": 120,            # how far back to look for their emails on the first run
+        "max_message_mb": 25,            # emails larger than this (with attachments) are skipped
+        "max_file_mb": 10,               # attachments / files larger than this are saved but not read
+        "effort": "medium",
+        # - name: Example Exporter
+        #   emails: [sales@example.co.id]       # first one is the To: of the questionnaire, the rest Cc
+        #   domains: [example.co.id]            # anyone at this domain counts (never a free-mail domain)
+        #   workbook_match: Example Exporter    # optional: their row in the supplier workbook
+        #   contact: Mohammed                   # optional: greeting name
+        "suppliers": [],
     },
     "statuses": {"supplier_drafted": "Enquiry drafted - to review"},
     # Enquiries and follow-ups carry the same one-line opt-out as RFQs ("reply 'unsubscribe' and we won't
