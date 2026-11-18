@@ -4,7 +4,8 @@ For each supplier listed under `onboarding.suppliers` in config.suppliers.yaml:
 
 1. Read its emails (your Inbox / reply folders). Save every attachment into
    <onboarding folder>/<Supplier>/Received/, and read any files you put in <Supplier>/Add files here/
-   (WhatsApp exports, photos of price lists, documents from their website).
+   (WhatsApp exports, photos of price lists, documents from their website) or in the supplier's own
+   `folders` (e.g. a folder you already keep for them). Zip files are opened and the files inside read.
 2. Ask Claude to answer OriginCrest's onboarding questionnaire (onboarding_questions.py) from that material
    only, with the source of every answer. Your own research row (from the supplier workbook) is used too,
    but answers that rest only on it are marked "From research - to confirm".
@@ -61,6 +62,10 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024        # the API's limit per image
 MIN_IMAGE_BYTES = 15 * 1024              # smaller images are usually email-signature logos
 MAX_TEXT_CHARS = 200_000                 # all text sent to Claude for one supplier
 MAX_BINARY_BYTES = 20 * 1024 * 1024      # all PDFs and images sent to Claude for one supplier
+MAX_ZIP_MEMBERS = 40                     # files read from one zip
+MAX_ZIP_MEMBER_BYTES = 10 * 1024 * 1024  # largest file read from inside a zip
+MAX_ZIP_TOTAL_BYTES = 60 * 1024 * 1024   # everything unpacked from one zip (guards against zip bombs)
+MAX_FOLDER_FILES = 200                   # files looked at in one supplier folder
 XLSX_TYPE = ("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 EXTRACT_SYSTEM = """\
@@ -107,6 +112,7 @@ class SupplierSpec:
     domains: list[str]
     match: str
     contact: str
+    folders: list[str] = field(default_factory=list)
 
     @property
     def folder_name(self) -> str:
@@ -133,7 +139,8 @@ def supplier_specs(cfg, report, only: list[str] | None = None) -> list[SupplierS
             elif d:
                 domains.append(d)
         specs.append(SupplierSpec(clean(raw["name"]), emails, domains, clean(raw.get("workbook_match")),
-                                  clean(raw.get("contact"))))
+                                  clean(raw.get("contact")),
+                                  [clean(f) for f in raw.get("folders") or [] if clean(f)]))
     if only:
         wanted = [o.lower() for o in only]
         specs = [s for s in specs if any(w in s.name.lower() for w in wanted)]
@@ -204,11 +211,51 @@ def _xlsx_text(data: bytes, max_cells: int = 4000) -> str:
     return "\n".join(lines)
 
 
+def _zip_content(name: str, data: bytes) -> tuple[list[dict], str, int]:
+    """Read the files inside a zip, in memory (nothing is unpacked to disk), within safety limits."""
+    blocks, read, skipped, used, total = [], [], [], 0, 0
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        members = [m for m in zf.infolist() if not m.is_dir()
+                   and "__MACOSX" not in m.filename and not Path(m.filename).name.startswith((".", "~$"))]
+        for m in members[:MAX_ZIP_MEMBERS]:
+            inner = Path(m.filename.replace("\\", "/")).name  # never a path: names like ../x are flattened
+            if m.flag_bits & 0x1:
+                skipped.append(f"{inner} (password-protected)")
+                continue
+            if Path(inner).suffix.lower() == ".zip":
+                skipped.append(f"{inner} (zip inside a zip)")
+                continue
+            if m.file_size > MAX_ZIP_MEMBER_BYTES or total + m.file_size > MAX_ZIP_TOTAL_BYTES:
+                skipped.append(f"{inner} (too large)")
+                continue
+            with zf.open(m) as fh:  # read at most the limit, whatever the header claims
+                member = fh.read(MAX_ZIP_MEMBER_BYTES + 1)
+            if len(member) > MAX_ZIP_MEMBER_BYTES:
+                skipped.append(f"{inner} (too large)")
+                continue
+            total += len(member)
+            member_blocks, status, member_used = file_content(f"{name} / {inner}", member)
+            if member_blocks:
+                blocks += member_blocks
+                used += member_used
+                read.append(inner)
+            else:
+                skipped.append(f"{inner} ({status.removeprefix('Skipped: ')})")
+        if len(members) > MAX_ZIP_MEMBERS:
+            skipped.append(f"{len(members) - MAX_ZIP_MEMBERS} more files")
+    not_read = f"; not read: {'; '.join(skipped)}" if skipped else ""
+    if not read:
+        return [], f"Skipped: nothing readable inside{not_read}", 0
+    return blocks, f"Read {len(read)} file(s) inside{not_read}", used
+
+
 def file_content(name: str, data: bytes, content_type: str = "") -> tuple[list[dict], str, int]:
-    """Content blocks for Claude, how it was read ("Read" or "Skipped: ..."), and binary bytes used."""
+    """Content blocks for Claude, how it was read ("Read..." or "Skipped: ..."), and binary bytes used."""
     ext = Path(name).suffix.lower()
     label = {"type": "text", "text": f"--- File: {name} ---"}
     try:
+        if ext == ".zip" or content_type in ("application/zip", "application/x-zip-compressed"):
+            return _zip_content(name, data)
         if ext == ".pdf" or content_type == "application/pdf":
             b64 = base64.standard_b64encode(data).decode()
             return [label, {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
@@ -270,6 +317,10 @@ def collect(ctx: RunContext, mailbox, spec: SupplierSpec, entry: dict, base: Pat
     messages, files = entry.setdefault("messages", {}), entry.setdefault("files", {})
     folder = base / spec.folder_name
     max_file = int(float(oc["max_file_mb"]) * 1024 * 1024)
+    max_zip = int(float(oc["max_zip_mb"]) * 1024 * 1024)
+
+    def too_big(name: str, size: int) -> bool:
+        return size > (max_zip if Path(name).suffix.lower() == ".zip" else max_file)
     if mailbox is not None and (spec.emails or spec.domains):
         since = ctx.today - timedelta(days=int(oc["lookback_days"]))
         own = getattr(mailbox, "own_addresses", set())
@@ -299,26 +350,42 @@ def collect(ctx: RunContext, mailbox, spec: SupplierSpec, entry: dict, base: Pat
                     continue
                 record = {"name": name, "type": ctype, "received": when.isoformat(), "from": info.from_addr,
                           "subject": info.subject, "path": "", "status": ""}
-                if len(data) > max_file:
-                    record["status"] = f"Skipped: larger than {oc['max_file_mb']} MB"
+                if too_big(name, len(data)):
+                    record["status"] = "Skipped: larger than the size limit (max_file_mb / max_zip_mb)"
                 else:
                     record["path"] = _save_file(folder / "Received", when, name, data, ctx.dry_run)
                 files[sha] = record
                 run.new_files += 1
-    drop = folder / "Add files here"
-    if drop.is_dir():
-        for path in sorted(drop.iterdir()):
-            if not path.is_file() or path.name.startswith(("~$", ".")) or path.name.lower() == "desktop.ini":
+    places = [(folder / "Add files here", "a file you added")]
+    for extra in spec.folders:
+        path = expand_path(extra)
+        if path.is_dir():
+            places.append((path, f"your folder {path.name}"))
+        else:
+            run.notes.append(f"folder not found: {extra}")
+    for place, source in places:
+        if not place.is_dir():
+            continue
+        found = [p for p in sorted(place.rglob("*")) if p.is_file()
+                 and not p.name.startswith(("~$", ".")) and p.name.lower() not in ("desktop.ini", "thumbs.db")]
+        if len(found) > MAX_FOLDER_FILES:
+            run.notes.append(f"{place}: only the first {MAX_FOLDER_FILES} of {len(found)} files looked at")
+        for path in found[:MAX_FOLDER_FILES]:
+            try:
+                size = path.stat().st_size
+                if too_big(path.name, size):
+                    run.notes.append(f"{path.name}: larger than the size limit (max_file_mb / max_zip_mb), not read")
+                    continue
+                data = path.read_bytes()
+            except OSError as exc:  # e.g. a OneDrive file that couldn't be downloaded
+                run.notes.append(f"{path.name}: couldn't open it ({exc.strerror or exc})")
                 continue
-            if path.stat().st_size > max_file:
-                run.notes.append(f"{path.name}: larger than {oc['max_file_mb']} MB, not read")
-                continue
-            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            sha = hashlib.sha256(data).hexdigest()
             if sha in files:
                 continue
             files[sha] = {"name": path.name, "type": "", "path": str(path), "status": "",
                           "received": date.fromtimestamp(path.stat().st_mtime).isoformat(),
-                          "from": "a file you added", "subject": ""}
+                          "from": source, "subject": ""}
             run.new_files += 1
     return run
 
@@ -489,7 +556,7 @@ def write_workbook(ctx: RunContext, specs: list[SupplierSpec], state: dict) -> P
         msgs = entry.get("messages", {})
         last = max((m["date"] for m in msgs.values()), default="")
         files = entry.get("files", {})
-        read = sum(1 for f in files.values() if f.get("status") == "Read")
+        read = sum(1 for f in files.values() if str(f.get("status", "")).startswith("Read"))
         q = entry.get("questionnaire", {})
         row = [spec.name, ", ".join(spec.emails + ["@" + d for d in spec.domains]), len(msgs), read,
                len(files) - read, fmt_date(date.fromisoformat(last)) if last else "", answered, missing, confirm,

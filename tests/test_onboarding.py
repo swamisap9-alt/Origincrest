@@ -312,3 +312,57 @@ def test_raw_messages_from_a_real_mailbox():
     assert parsed["Subject"] == f"Price list {tag}"
     [att] = list(parsed.iter_attachments())
     assert att.get_payload(decode=True) == b"%PDF-1.4 " + tag.encode()
+
+
+# --- zip files and your own supplier folders ------------------------------------------------------------------
+
+def zip_bytes(members: dict) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return out.getvalue()
+
+
+def test_zip_files_are_read_inside_safely():
+    data = zip_bytes({
+        "docs/Company profile.docx": docx_bytes("PT Exporter Test, NIB 5555"),
+        "docs/Price list.pdf": b"%PDF-1.4 prices",
+        "../escape.txt": "MOQ 60 kg trial",
+        "terms.doc": b"old word",
+        "inner.zip": zip_bytes({"a.txt": "x"}),
+        "__MACOSX/._Price list.pdf": b"junk",
+    })
+    blocks, status, used = file_content("Exporter documents.zip", data)
+    text = "\n".join(b.get("text", "") for b in blocks)
+    assert status.startswith("Read 3 file(s) inside; not read:")
+    assert "terms.doc (old Office format" in status and "inner.zip (zip inside a zip)" in status
+    assert "NIB 5555" in text and "MOQ 60 kg trial" in text and "Exporter documents.zip / escape.txt" in text
+    assert any(b["type"] == "document" for b in blocks) and used == len(b"%PDF-1.4 prices")
+    assert "__MACOSX" not in text
+    huge = zip_bytes({"big.txt": b"0" * (11 * 1024 * 1024)})
+    assert file_content("big.zip", huge)[1] == "Skipped: nothing readable inside; not read: big.txt (too large)"
+    assert file_content("broken.zip", b"not a zip")[1].startswith("Skipped: couldn't open it")
+
+
+def test_a_suppliers_own_folder_is_read_including_zips(tmp_path, ocfg, agent, mailbox, make_octx):
+    own = tmp_path / "OneDrive" / "OriginCrest suppliers" / "Example Exporter"
+    (own / "from WhatsApp").mkdir(parents=True)
+    (own / "Exporter documents.zip").write_bytes(zip_bytes({"Price list.pdf": b"%PDF-1.4 prices",
+                                                        "notes.txt": "Trial from 60 kg"}))
+    (own / "from WhatsApp" / "chat.txt").write_text("Loading port Jakarta")
+    ocfg.data["onboarding"]["suppliers"][0]["folders"] = [str(own), str(tmp_path / "missing folder")]
+    agent.structured_queue = [ANSWERS]
+    ctx = make_octx()
+    assert run_onboarding(ctx) == 1
+    [(kind, content)] = [c for c in agent.calls if c[0] == "structured_content"]
+    text = "\n".join(b.get("text", "") for b in content)
+    assert "Trial from 60 kg" in text and "Loading port Jakarta" in text
+    assert any(b["type"] == "document" for b in content)
+    files = {r[4].value: (r[2].value, r[6].value)
+             for r in openpyxl.load_workbook(workbook_path(ocfg))["Files"].iter_rows(min_row=2)}
+    assert files["Exporter documents.zip"] == ("your folder Example Exporter", "Read 2 file(s) inside")
+    assert files["chat.txt"][1] == "Read"
+    assert any("folder not found" in n for n in ctx.report.sections["Files not read"])
+    summary = openpyxl.load_workbook(workbook_path(ocfg))["Summary"]
+    assert summary.cell(2, 4).value == 2  # "Files read" counts the zip as read

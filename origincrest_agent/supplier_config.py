@@ -88,12 +88,14 @@ SUPPLIER_DEFAULTS: dict[str, Any] = {
         "lookback_days": 120,            # how far back to look for their emails on the first run
         "max_message_mb": 25,            # emails larger than this (with attachments) are skipped
         "max_file_mb": 10,               # attachments / files larger than this are saved but not read
+        "max_zip_mb": 50,                # the same for zip files (the files inside are read one by one)
         "effort": "medium",
         # - name: Example Exporter
         #   emails: [sales@example.co.id]       # first one is the To: of the questionnaire, the rest Cc
         #   domains: [example.co.id]            # anyone at this domain counts (never a free-mail domain)
         #   workbook_match: Example Exporter    # optional: their row in the supplier workbook
         #   contact: Mohammed                   # optional: greeting name
+        #   folders: ['C:\\...\\Example Exporter']   # optional: more folders of theirs to read (zips too)
         "suppliers": [],
     },
     "statuses": {"supplier_drafted": "Enquiry drafted - to review"},

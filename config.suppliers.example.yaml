@@ -58,6 +58,8 @@ onboarding:
   #   domains: [example.co.id]                              # anyone there counts (never gmail.com etc.)
   #   workbook_match: Example Exporter                      # optional: their row in the supplier workbook
   #   contact: Budi                                         # optional: greeting name
+  #   folders: ['C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest suppliers\Example Exporter']
+  #                                      # optional: folders you keep for them; files and zips there are read
 
 # Optional. Its own data folder (state, logs, reports, workbook backups). Default: a "suppliers"
 # folder inside the outreach agent's data folder.

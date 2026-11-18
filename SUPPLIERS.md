@@ -117,7 +117,9 @@ scripts\suppliers.cmd onboarding-template      # a blank questionnaire (Excel) i
 - **Files:** every attachment a supplier sends is saved to
   `OriginCrest supplier onboarding\<Supplier>\Received\`. Put anything else you get from them (WhatsApp
   exports, photos of a price list, documents from their website) into `<Supplier>\Add files here\`; it's read
-  on the next run. PDFs, Word (.docx), Excel (.xlsx), text and photos are read; old .doc / .xls files are listed
+  on the next run. If you already keep a folder for a supplier, list it under that supplier's `folders:` and it's
+  read too, subfolders included. PDFs, Word (.docx), Excel (.xlsx), text and photos are read, and **zip files are
+  opened** and the files inside read (in memory; at most 40 files, 10 MB each). Old .doc / .xls files are listed
   as not read.
 - **Workbook:** `OriginCrest supplier onboarding\Supplier_Onboarding.xlsx`:
   - *Summary*: one row per supplier, with emails and files read, answered / missing / to confirm, red flags, and
