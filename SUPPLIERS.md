@@ -29,7 +29,7 @@ agent writes settings files). To use different values for the supplier agent, pu
 
 | Workflow | Command | Scheduled | What it does |
 |---|---|---|---|
-| Onboarding | `onboarding-scan` / `onboarding-draft` | weekdays, 8:15 (scan only) | Finds every supplier by itself (each folder in `OriginCrest suppliers`, and each supplier in the workbook once they've written), reads their emails, attachments and files, and fills `Supplier_Onboarding.xlsx` with their answers to the onboarding questionnaire; `onboarding-draft` also drafts a pre-filled questionnaire email. |
+| Onboarding | `onboarding-scan` / `onboarding-draft` | every day, 8:15 (scan only) | Finds every supplier by itself (each folder in `OriginCrest suppliers`, and each supplier in the workbook once they've written), reads their emails, attachments and files, and fills `Supplier_Onboarding.xlsx` with their answers to the onboarding questionnaire; `onboarding-draft` also drafts a pre-filled questionnaire email. |
 | Search | `search` | every 3 days, 6:00 | Searches two regions or supplier types per run (rotating; with `priority_focus` set, the next priority search plus one from the rotation). Adds new suppliers to `New Suppliers - Indonesia` with contact details that appear on the supplier's own pages, origins, certifications, export capability, a fit score, **Comparison with current vendor** and **Suggested approach**. Then drafts an enquiry to each. |
 | Follow-up | `followup` | weekdays, 7:45 | Reads the supplier workbook, picks up enquiries you've sent (from your Sent folder), checks for replies, and drafts a threaded follow-up when there's no reply after `followup.supplier_days` (3). Up to 3 per supplier. |
 | Draft | `draft` / `redraft "Name"` | after each search | Enquiries for suppliers you added to the tab yourself, or a new first draft after you deleted one. |
@@ -59,8 +59,8 @@ agent writes settings files). To use different values for the supplier agent, pu
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts\install_supplier_tasks.ps1
    ```
-   Change times with `-SearchEveryDays 3 -SearchTime 06:00 -FollowupTime 07:45`. This only adds or replaces
-   the two supplier tasks; your outreach tasks and their times are left alone. (It also removes
+   Change times with `-SearchEveryDays 3 -SearchTime 06:00 -FollowupTime 07:45 -OnboardingTime 08:15`. This only
+   adds or replaces the three supplier tasks; your outreach tasks and their times are left alone. (It also removes
    `OriginCrest\5 Suppliers`, which an earlier version added to the outreach folder.)
 
 ## How the statuses move
@@ -158,8 +158,10 @@ scripts\suppliers.cmd onboarding-template      # a blank questionnaire (Excel) i
   across documents, and so on) is listed in the Summary and the run report.
 - **Cost:** material goes to Claude only when something new has arrived for that supplier (a new email, or a new
   or changed file in its folder); `--force` reads everything again.
-- **Schedule:** `install_supplier_tasks.ps1` adds **3 Supplier onboarding** (weekdays 8:15, `onboarding-scan`).
-  The questionnaire email is drafted only when you run `onboarding-draft`.
+- **Schedule:** `install_supplier_tasks.ps1` adds **3 Supplier onboarding** (every day at 8:15,
+  `onboarding-scan`), so a new supplier folder or reply is in the workbook by the next morning. A day with
+  nothing new costs nothing. For weekdays only, add `-OnboardingWeekdaysOnly`; for another time,
+  `-OnboardingTime 12:30`. The questionnaire email is drafted only when you run `onboarding-draft`.
 
 ## Commands
 

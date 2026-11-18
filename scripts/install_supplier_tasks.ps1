@@ -6,7 +6,8 @@ param(
     [int]$SearchEveryDays = 3,
     [string]$SearchTime = "06:00",
     [string]$FollowupTime = "07:45",
-    [string]$OnboardingTime = "08:15"
+    [string]$OnboardingTime = "08:15",
+    [switch]$OnboardingWeekdaysOnly   # the onboarding scan runs every day unless this is set
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -43,9 +44,17 @@ $weekdays = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednes
 Add-SupplierTask "2 Supplier follow-up" "followup" $weekdays `
     "Weekdays: check supplier replies and draft follow-ups to enquiries unanswered after the set number of days."
 
-$onboarding = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $OnboardingTime
+# Every day: new supplier folders and replies are picked up within a day. A day with nothing new costs nothing
+# (Claude is only asked when a supplier has sent something new).
+if ($OnboardingWeekdaysOnly) {
+    $onboarding = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Tuesday, Wednesday, Thursday, Friday -At $OnboardingTime
+    $when = "Weekdays"
+} else {
+    $onboarding = New-ScheduledTaskTrigger -Daily -At $OnboardingTime
+    $when = "Every day"
+}
 Add-SupplierTask "3 Supplier onboarding" "onboarding-scan" $onboarding `
-    "Weekdays: read new emails and files from onboarding suppliers and update Supplier_Onboarding.xlsx."
+    "${when}: find every supplier (each folder in OriginCrest suppliers, the supplier workbook, your settings), read their new emails and files, and update Supplier_Onboarding.xlsx."
 
 Write-Host ""
 Write-Host "Done. See them in Task Scheduler > Task Scheduler Library > OriginCrest Suppliers."
