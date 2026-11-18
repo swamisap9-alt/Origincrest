@@ -4,6 +4,7 @@ import email
 import email.policy
 import imaplib
 import io
+import json
 import os
 import uuid
 import zipfile
@@ -17,8 +18,8 @@ import pytest
 import yaml
 
 from origincrest_agent.mailer import Mailbox, quote
-from origincrest_agent.onboarding import (EXTRACT_SYSTEM, file_content, onboarding_folder, questionnaire_xlsx,
-                                          run_onboarding, workbook_path)
+from origincrest_agent.onboarding import (EXTRACT_SYSTEM, file_content, names_match, onboarding_folder,
+                                          questionnaire_xlsx, run_onboarding, supplier_specs, workbook_path)
 from origincrest_agent.onboarding_questions import KEYS
 from origincrest_agent.runtime import Report, RunContext
 from origincrest_agent.state import State
@@ -233,7 +234,7 @@ def test_settings_problems_are_reported(ocfg, make_octx):
     assert "free-mail domain" in settings and "has no name" in settings
     ocfg.data["onboarding"]["suppliers"] = []
     ctx = make_octx()
-    assert run_onboarding(ctx) == 0 and "No suppliers listed" in ctx.report.sections["Nothing to do"][0]
+    assert run_onboarding(ctx) == 0 and "No suppliers found" in ctx.report.sections["Nothing to do"][0]
 
 
 # --- questionnaire drafts ---------------------------------------------------------------------------------------
@@ -307,6 +308,8 @@ def test_raw_messages_from_a_real_mailbox():
     imap.logout()
     with Mailbox(host, int(port), user, password, security="none") as mb:
         found = mb.raw_messages_from([], [domain], TODAY - timedelta(days=3))
+        senders = mb.senders_since(TODAY - timedelta(days=3))
+    assert {f"sales@{domain}", f"someone@other{tag}.com"} <= senders
     assert len(found) == 1
     parsed = email.message_from_bytes(found[0][2], policy=email.policy.default)
     assert parsed["Subject"] == f"Price list {tag}"
@@ -365,4 +368,172 @@ def test_a_suppliers_own_folder_is_read_including_zips(tmp_path, ocfg, agent, ma
     assert files["chat.txt"][1] == "Read"
     assert any("folder not found" in n for n in ctx.report.sections["Files not read"])
     summary = openpyxl.load_workbook(workbook_path(ocfg))["Summary"]
-    assert summary.cell(2, 4).value == 2  # "Files read" counts the zip as read
+    row = dict(zip([c.value for c in summary[1]], [c.value for c in summary[2]]))
+    assert row["Files read"] == 2  # counts the zip as read
+
+
+# --- finding suppliers by themselves: folders and the supplier workbook ---------------------------------------
+
+def suppliers_root(cfg) -> Path:
+    return cfg.workbook_path("suppliers").parent
+
+
+def add_supplier_rows(cfg, *rows) -> None:
+    path = cfg.workbook_path("suppliers")
+    wb = openpyxl.load_workbook(path)
+    ws = wb.active
+    headers = [h.value for h in ws[1]]
+    for values in rows:
+        row = [None] * len(headers)
+        for k, v in values.items():
+            row[headers.index(k)] = v
+        ws.append(row)
+    wb.save(path)
+
+
+def summary_rows(cfg) -> dict:
+    ws = openpyxl.load_workbook(workbook_path(cfg))["Summary"]
+    headers = [c.value for c in ws[1]]
+    return {r[0].value: dict(zip(headers, (c.value for c in r))) for r in ws.iter_rows(min_row=2)}
+
+
+def claude_texts(agent) -> list[str]:
+    return ["\n".join(b.get("text", "") for b in content) for kind, content in agent.calls
+            if kind == "structured_content"]
+
+
+def test_every_supplier_folder_is_a_supplier(ocfg, agent, mailbox, make_octx):
+    root = suppliers_root(ocfg)
+    for name, files in (("Kopi Alpha (KA)", {"price list.txt": "Alpha robusta FOB 5.00"}), ("Beta Beans", {}),
+                        ("Kopi Test", {"chat.txt": "Kopi Test notes from WhatsApp"}),   # the supplier in settings
+                        ("_archive", {"old.txt": "archived quote"}), (".hidden", {"x.txt": "hidden"}),
+                        ("Price lists", {"all.txt": "market prices"})):
+        (root / name).mkdir()
+        for file, text in files.items():
+            (root / name / file).write_text(text)
+    (root / "loose file.txt").write_text("not in a supplier folder")
+    ocfg.data["onboarding"]["skip_folders"] = ["Price lists"]
+    agent.structured_queue = [ANSWERS, ANSWERS]
+    ctx = make_octx()
+    assert run_onboarding(ctx) == 2     # PT Kopi Test (with its folder) and Kopi Alpha; Beta Beans is empty
+    rows = summary_rows(ocfg)
+    assert list(rows) == [SUPPLIER, "Beta Beans", "Kopi Alpha (KA)"]
+    assert rows[SUPPLIER]["Found in"] == "your settings; folder Kopi Test"
+    assert rows["Kopi Alpha (KA)"]["Found in"] == "folder Kopi Alpha (KA)"
+    assert rows["Kopi Alpha (KA)"]["Emails / domains"] == "none known"
+    assert rows["Beta Beans"]["Where it stands"] == "Nothing received yet"
+    texts = claude_texts(agent)
+    assert any("Kopi Test notes from WhatsApp" in t for t in texts) and any("Alpha robusta" in t for t in texts)
+    assert not any(w in t for t in texts for w in ("archived quote", "hidden", "market prices", "not in a supplier"))
+    report = ctx.report.sections
+    assert "Beta Beans, Kopi Alpha (KA)" in report["New suppliers"][0]
+    assert "Beta Beans, Kopi Alpha (KA): no email address known" in report["Only the folder is read"][0]
+    assert f"{SUPPLIER} = 'Kopi Test'" in report["Suppliers found"]
+
+    (root / "Gamma Exports").mkdir()                     # a new supplier: picked up on the next run
+    (root / "Gamma Exports" / "profile.txt").write_text("Gamma company profile")
+    agent.calls.clear()
+    agent.structured_queue = [ANSWERS]
+    assert run_onboarding(make_octx()) == 1             # and only the new material goes to Claude
+    assert ["Gamma company profile" in t for t in claude_texts(agent)] == [True]
+    assert "Gamma Exports" in summary_rows(ocfg)
+
+
+def test_suppliers_in_the_workbook_are_read_once_they_write(ocfg, agent, mailbox, make_octx):
+    add_supplier_rows(ocfg, {"Company": "PT Gamma Exports", "Email": "sales@gamma-exports.co.id",
+                             "Contact name": "Ibu Sari", "Origins / coffees": "Gayo arabica (search result)"},
+                      {"Company": "Delta Coffee", "Email": "info@delta-kopi.co.id"},
+                      {"Company": "Epsilon Kopi", "Email": "info@epsilon.co.id",
+                       "Status": "Unsubscribed - do not contact"},
+                      {"Company": "Zeta Farm", "Email": "zeta.farm@gmail.com"})
+    gamma = raw_email("Sari <export@gamma-exports.co.id>", "Re: Green coffee enquiry", "Our MOQ is 1 MT.",
+                      utc(TODAY - timedelta(days=2)), msgid="<g1@gamma-exports.co.id>")
+    epsilon = raw_email("info@epsilon.co.id", "Re: enquiry", "unsubscribe", utc(TODAY - timedelta(days=1)))
+    mailbox.raw = [("INBOX", "1", gamma), ("INBOX", "2", epsilon)]
+    (suppliers_root(ocfg) / "GAMMA").mkdir()            # your folder for them, under a short name
+    agent.structured_queue = [ANSWERS]
+    ctx = make_octx()
+    assert run_onboarding(ctx, draft=True) == 1
+    rows = summary_rows(ocfg)
+    assert list(rows) == [SUPPLIER, "PT Gamma Exports"]   # Delta and Zeta haven't written; Epsilon unsubscribed
+    assert rows["PT Gamma Exports"]["Found in"] == "folder GAMMA; supplier workbook"
+    assert rows["PT Gamma Exports"]["Emails read"] == 1
+    searched = {a for addrs, _ in mailbox.searched for a in addrs}
+    assert "sales@gamma-exports.co.id" in searched                       # only those who wrote are searched for
+    assert not searched & {"info@delta-kopi.co.id", "zeta.farm@gmail.com", "sales@kopitest.co.id"}
+    [text] = claude_texts(agent)
+    assert "Our MOQ is 1 MT" in text and "Gayo arabica (search result)" in text
+    drafts = {m["To"]: m for m in mailbox.drafts}
+    assert set(drafts) == {"sales@kopitest.co.id", "export@gamma-exports.co.id"}   # to whoever wrote
+    assert drafts["export@gamma-exports.co.id"]["In-Reply-To"] == "<g1@gamma-exports.co.id>"
+    assert "Dear Ibu Sari," in drafts["export@gamma-exports.co.id"].get_body().get_content()
+    state = json.loads((ocfg.data_dir / "onboarding.json").read_text())
+    assert set(state["suppliers"]) == {SUPPLIER, "PT Gamma Exports"}
+    ctx = make_octx()                                    # named, a supplier gets one before they've written
+    run_onboarding(ctx, suppliers=["Delta"], draft=True)
+    assert mailbox.drafts[-1]["To"] == "info@delta-kopi.co.id" and "Delta Coffee" in summary_rows(ocfg)
+    assert "Supplier workbook: 3 suppliers with an email address are watched for replies; 1 have written to you" \
+        in ctx.report.sections["Suppliers found"][0]
+
+
+def test_names_stay_put_and_a_narrowed_run_keeps_everyone(ocfg, agent, mailbox, make_octx):
+    root = suppliers_root(ocfg)
+    (root / "Kopi Alpha").mkdir()
+    (root / "Kopi Alpha" / "chat.txt").write_text("Alpha: trial 60 kg")
+    agent.structured_queue = [ANSWERS]
+    ctx = make_octx()
+    run_onboarding(ctx, draft=True)
+    assert [m["To"] for m in mailbox.drafts] == ["sales@kopitest.co.id"]
+    assert "Kopi Alpha: they haven't emailed you yet" in ctx.report.sections["Questionnaire not drafted"][0]
+
+    # Later the search adds them to the workbook under their full name, and they write.
+    add_supplier_rows(ocfg, {"Company": "PT Kopi Alpha Indonesia", "Email": "sales@kopialpha.co.id"})
+    mailbox.raw = [("INBOX", "1", raw_email("sales@kopialpha.co.id", "Re: enquiry", "Price list attached.",
+                                            utc(TODAY)))]
+    agent.structured_queue = [ANSWERS]
+    assert run_onboarding(make_octx()) == 1
+    rows = summary_rows(ocfg)
+    assert list(rows) == [SUPPLIER, "Kopi Alpha"]       # the same supplier, under the name it already had
+    assert rows["Kopi Alpha"]["Emails read"] == 1 and rows["Kopi Alpha"]["Found in"] == "folder Kopi Alpha; supplier workbook"
+
+    ctx = make_octx()
+    run_onboarding(ctx, suppliers=["alpha"])
+    assert list(summary_rows(ocfg)) == [SUPPLIER, "Kopi Alpha"]   # the others stay in the workbook
+    assert [line.split(":")[0] for line in ctx.report.sections["Onboarding"]] == ["Kopi Alpha"]
+
+
+def test_folders_can_be_turned_off_and_ambiguous_ones_are_kept_apart(ocfg):
+    add_supplier_rows(ocfg, {"Company": "Sigma Java Estate", "Email": "a@sigmajava.co.id"},
+                      {"Company": "Sigma Gayo Estate", "Email": "b@sigmagayo.co.id"})
+    (suppliers_root(ocfg) / "Sigma").mkdir()
+    report = Report("supplier-onboarding", TODAY)
+    specs = {s.name: s for s in supplier_specs(ocfg, report)}
+    assert specs["Sigma"].sources == ["folder"]
+    assert any("more than one supplier" in line for line in report.sections["Suppliers found"])
+    ocfg.data["onboarding"]["suppliers_folder"] = ""
+    ocfg.data["onboarding"]["from_supplier_workbook"] = False
+    assert [s.name for s in supplier_specs(ocfg, Report("x", TODAY))] == [SUPPLIER]
+
+
+def test_a_folder_that_nearly_matches_gets_a_hint(ocfg, make_octx):
+    add_supplier_rows(ocfg, {"Company": "PT Rimba Agrolestari", "Email": "sales@rimba.co.id"})
+    (suppliers_root(ocfg) / "Rimba Estate").mkdir()
+    ctx = make_octx()
+    run_onboarding(ctx)
+    assert "Rimba Estate" in summary_rows(ocfg)
+    assert "Is 'Rimba Estate' the same as PT Rimba Agrolestari?" in ctx.report.sections["Only the folder is read"][1]
+
+
+@pytest.mark.parametrize("a, b, same", [
+    ("ALPHA Coffee", "PT Alpha Coffee Indonesia", True),
+    ("JSC", "Java Specialty Coffee (JSC)", True),
+    ("Java Specialty Coffee", "Java Specialty Coffee (JSC)", True),
+    ("Omega", "Omega Single Origins", True),
+    ("CV Rimba", "Java Rimba Estate", True),
+    ("Gayo Coffee", "Toraja Coffee", False),
+    ("Gayo Mountain Coffee", "Koperasi Gayo Lestari", False),
+    ("PT Java Coffee", "Java Specialty Coffee (JSC)", False),
+    ("Kopi Test", "Kopi Alpha", False),
+])
+def test_names_match(a, b, same):
+    assert names_match(a, b) is same and names_match(b, a) is same

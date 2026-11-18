@@ -46,20 +46,30 @@ followup:
   max_followups_per_contact: 3
   max_drafts_per_run: 15
 
-# Supplier onboarding (onboarding-scan / onboarding-draft): reads each supplier's emails and attachments,
-# saves the files under the folder below, and fills Supplier_Onboarding.xlsx with their answers to the
-# onboarding questionnaire. onboarding-draft also drafts a pre-filled questionnaire email to each.
+# Supplier onboarding (onboarding-scan / onboarding-draft): reads each supplier's emails and files, saves the
+# attachments under `folder`, and fills Supplier_Onboarding.xlsx with their answers to the onboarding
+# questionnaire. onboarding-draft also drafts a pre-filled questionnaire email.
+#
+# Suppliers are found by themselves, so usually nothing needs listing here:
+#   - every subfolder of suppliers_folder is a supplier (make a folder for a new supplier and drop its files
+#     in; zips and subfolders are read). Folders starting with "_" or "." and those in skip_folders are not;
+#   - every supplier in the supplier workbook with an email address, as soon as they write to you;
+#   - anyone under `suppliers` below: always included, and their emails are used for the questionnaire.
+# The same supplier in several places (folder "ALPHA Coffee", workbook row "PT Alpha Coffee Indonesia") is merged.
 onboarding:
   folder: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest supplier onboarding'
   lookback_days: 120            # how far back to look for their emails
+  # suppliers_folder: 'C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest suppliers'
+  #                             # default: the folder the supplier workbook is in; '' = don't use folders
+  skip_folders: []              # subfolders there that aren't suppliers, e.g. ['Price lists', 'Archive']
+  from_supplier_workbook: true  # false = don't watch the supplier workbook's suppliers
   suppliers: []
   # - name: Example Exporter
   #   emails: [sales@example.co.id, export@example.co.id]   # first = To: of the questionnaire, rest = Cc
   #   domains: [example.co.id]                              # anyone there counts (never gmail.com etc.)
   #   workbook_match: Example Exporter                      # optional: their row in the supplier workbook
   #   contact: Budi                                         # optional: greeting name
-  #   folders: ['C:\Users\swami\OneDrive\Documents\Origincrest\OriginCrest suppliers\Example Exporter']
-  #                                      # optional: folders you keep for them; files and zips there are read
+  #   folders: ['D:\Shared\Example Exporter']               # optional: folders outside suppliers_folder
 
 # Optional. Its own data folder (state, logs, reports, workbook backups). Default: a "suppliers"
 # folder inside the outreach agent's data folder.

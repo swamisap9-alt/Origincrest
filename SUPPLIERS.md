@@ -29,7 +29,7 @@ agent writes settings files). To use different values for the supplier agent, pu
 
 | Workflow | Command | Scheduled | What it does |
 |---|---|---|---|
-| Onboarding | `onboarding-scan` / `onboarding-draft` | weekdays, 8:15 (scan only) | Reads replies and attachments from the suppliers you list, saves the files, and fills `Supplier_Onboarding.xlsx` with their answers to the onboarding questionnaire; `onboarding-draft` also drafts a pre-filled questionnaire email to each. |
+| Onboarding | `onboarding-scan` / `onboarding-draft` | weekdays, 8:15 (scan only) | Finds every supplier by itself (each folder in `OriginCrest suppliers`, and each supplier in the workbook once they've written), reads their emails, attachments and files, and fills `Supplier_Onboarding.xlsx` with their answers to the onboarding questionnaire; `onboarding-draft` also drafts a pre-filled questionnaire email. |
 | Search | `search` | every 3 days, 6:00 | Searches two regions or supplier types per run (rotating; with `priority_focus` set, the next priority search plus one from the rotation). Adds new suppliers to `New Suppliers - Indonesia` with contact details that appear on the supplier's own pages, origins, certifications, export capability, a fit score, **Comparison with current vendor** and **Suggested approach**. Then drafts an enquiry to each. |
 | Follow-up | `followup` | weekdays, 7:45 | Reads the supplier workbook, picks up enquiries you've sent (from your Sent folder), checks for replies, and drafts a threaded follow-up when there's no reply after `followup.supplier_days` (3). Up to 3 per supplier. |
 | Draft | `draft` / `redraft "Name"` | after each search | Enquiries for suppliers you added to the tab yourself, or a new first draft after you deleted one. |
@@ -106,21 +106,38 @@ Once a supplier replies, the onboarding commands keep track of what they've told
 onboarding questionnaire (31 questions in 6 sections: company and legal, coffees and quality, commercial terms,
 packaging and logistics, export documents and Australian biosecurity, compliance and references).
 
-List the suppliers under `onboarding.suppliers` in `config.suppliers.yaml`, then:
-
 ```powershell
-scripts\suppliers.cmd onboarding-scan          # read their emails and files, update the workbook
-scripts\suppliers.cmd onboarding-draft         # the same, then draft a questionnaire email to each
+scripts\suppliers.cmd onboarding-scan          # read every supplier's emails and files, update the workbook
+scripts\suppliers.cmd onboarding-draft         # the same, then draft questionnaire emails
 scripts\suppliers.cmd onboarding-template      # a blank questionnaire (Excel) in the onboarding folder
 ```
 
+- **Which suppliers:** nothing needs listing. Every run finds them in three places:
+  1. **Your supplier folders:** every folder in `OriginCrest suppliers` (the folder the supplier workbook is in)
+     is a supplier. For a new supplier, make a folder named after it and drop its files in. It's picked up on
+     the next run. Folders whose name starts with `_` (e.g. `_Archive`) or `.`, and any you list under
+     `onboarding.skip_folders`, aren't suppliers. Files loose in `OriginCrest suppliers` itself aren't read.
+  2. **The supplier workbook:** every supplier with an email address is watched. Once they write to you, their
+     emails and attachments are read and they appear in the onboarding workbook. (One quick check of your
+     inbox per run, so a long list costs nothing. Rows set to `Unsubscribed` or another skip status are left
+     out.)
+  3. **`onboarding.suppliers`** (optional): suppliers to always include, with the exact addresses the
+     questionnaire goes to (first = To, the rest Cc).
+
+  The same supplier found in more than one place is merged by name, email and email domain. For example, the
+  folder `ALPHA Coffee` is the workbook's `PT Alpha Coffee Indonesia`, and `JSC` is
+  `Java Specialty Coffee (JSC)`. `PT` / `CV`, `Kopi`, `Indonesia` and words like *coffee* or *export*
+  don't count. Each supplier keeps the name it first appeared under. The run report (**Suppliers found**) shows
+  what was merged, and a folder that could be more than one supplier is kept separate (rename it to the
+  supplier's full name). A folder with no email address known is read for its files only; add the email in the
+  supplier workbook to read their emails too. *Found in* on the Summary sheet shows where each supplier came from.
 - **Files:** every attachment a supplier sends is saved to
   `OriginCrest supplier onboarding\<Supplier>\Received\`. Put anything else you get from them (WhatsApp
   exports, photos of a price list, documents from their website) into `<Supplier>\Add files here\`; it's read
-  on the next run. If you already keep a folder for a supplier, list it under that supplier's `folders:` and it's
-  read too, subfolders included. PDFs, Word (.docx), Excel (.xlsx), text and photos are read, and **zip files are
-  opened** and the files inside read (in memory; at most 40 files, 10 MB each). Old .doc / .xls files are listed
-  as not read.
+  on the next run. Everything in the supplier's folder in `OriginCrest suppliers` is read too, subfolders
+  included (for a folder elsewhere, list it under that supplier's `folders:`). PDFs, Word (.docx), Excel (.xlsx),
+  text and photos are read, and **zip files are opened** and the files inside read (in memory; at most 40 files,
+  10 MB each). Old .doc / .xls files are listed as not read.
 - **Workbook:** `OriginCrest supplier onboarding\Supplier_Onboarding.xlsx`:
   - *Summary*: one row per supplier, with emails and files read, answered / missing / to confirm, red flags, and
     where things stand.
@@ -131,13 +148,16 @@ scripts\suppliers.cmd onboarding-template      # a blank questionnaire (Excel) i
   - *Questionnaire*: the full question list.
 
   **Your notes** and **Confirmed** are your columns; the agent keeps them every time it rewrites the workbook.
-- **Questionnaire email:** `onboarding-draft` saves one draft per supplier in their existing email thread, with
-  an Excel questionnaire attached. Column D is pre-filled with what they've already told you; they confirm it
+- **Questionnaire email:** `onboarding-draft` saves one draft for each supplier listed under
+  `onboarding.suppliers` or who has emailed you. It goes in their existing email thread, to whoever last wrote,
+  with an Excel questionnaire attached. A supplier who hasn't emailed gets one only when you name it:
+  `onboarding-draft --supplier "Kopi Alpha"`. Column D is pre-filled with what they've already told you; they confirm it
   and complete column E. When they send it back, the next scan reads their answers. It drafts once per
   supplier (add `--again` for a new one) and never while another draft to them is waiting.
 - **Red flags:** anything to check before paying (payment to a personal account, company names that don't match
   across documents, and so on) is listed in the Summary and the run report.
-- **Cost:** material goes to Claude only when something new has arrived; `--force` reads everything again.
+- **Cost:** material goes to Claude only when something new has arrived for that supplier (a new email, or a new
+  or changed file in its folder); `--force` reads everything again.
 - **Schedule:** `install_supplier_tasks.ps1` adds **3 Supplier onboarding** (weekdays 8:15, `onboarding-scan`).
   The questionnaire email is drafted only when you run `onboarding-draft`.
 

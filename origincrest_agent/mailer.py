@@ -451,6 +451,21 @@ class Mailbox:
                     found.append((folder, uid, raw))
         return found
 
+    def senders_since(self, since: date, chunk: int = 500) -> set[str]:
+        """Every sender address in the reply folders since a date (headers only: one search and a small
+        fetch per folder), so a caller watching many suppliers only searches for the ones who wrote."""
+        senders: set[str] = set()
+        for folder in self.reply_folders:
+            uids = self._search(folder, ["SINCE", imap_date(since)])
+            for start in range(0, len(uids), chunk):
+                typ, data = self.imap.uid("FETCH", ",".join(uids[start:start + chunk]),
+                                          "(BODY.PEEK[HEADER.FIELDS (FROM)])")
+                for item in data or []:
+                    if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], bytes):
+                        header = email.message_from_bytes(item[1]).get("From", "")
+                        senders |= {a.lower() for _, a in getaddresses([str(header)]) if "@" in a}
+        return senders
+
     def messages_to(self, address: str, since: date) -> list[MailInfo]:
         """Messages in your Sent folder(s) addressed to `address` since a date, newest first."""
         found: list[MailInfo] = []

@@ -136,7 +136,16 @@ class FakeMailbox:
                 and m.when.date() >= since and not m.is_bounce]
         return sorted(hits, key=lambda m: m.when, reverse=True)
 
+    def senders_since(self, since):
+        import email as _email
+        from email.utils import getaddresses
+
+        self.sender_checks = getattr(self, "sender_checks", 0) + 1
+        return {a.lower() for _, _, raw in self.raw
+                for _, a in getaddresses([str(_email.message_from_bytes(raw).get("From", ""))]) if "@" in a}
+
     def raw_messages_from(self, addresses, domains, since, limit=50, max_bytes=None):
+        self.searched = getattr(self, "searched", []) + [(tuple(addresses), tuple(domains))]
         import email as _email
 
         out = []

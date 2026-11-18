@@ -90,6 +90,14 @@ SUPPLIER_DEFAULTS: dict[str, Any] = {
         "max_file_mb": 10,               # attachments / files larger than this are saved but not read
         "max_zip_mb": 50,                # the same for zip files (the files inside are read one by one)
         "effort": "medium",
+        # Which suppliers: every subfolder of suppliers_folder (None = the folder the supplier workbook is in;
+        # '' = don't look at folders), every supplier in the supplier workbook with an email address once
+        # they've written to you, and anyone listed under `suppliers` below. Folders whose name starts with
+        # "_" or "." and the ones in skip_folders aren't suppliers.
+        "suppliers_folder": None,
+        "skip_folders": [],
+        "from_supplier_workbook": True,
+        # Optional: suppliers to always include, or to give exact addresses for the questionnaire.
         # - name: Example Exporter
         #   emails: [sales@example.co.id]       # first one is the To: of the questionnaire, the rest Cc
         #   domains: [example.co.id]            # anyone at this domain counts (never a free-mail domain)

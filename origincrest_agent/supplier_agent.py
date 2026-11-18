@@ -179,11 +179,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("followup", help="check replies and draft follow-ups to unanswered enquiries")
     p.add_argument("--dry-run", action="store_true", help="check and preview drafts as .eml files only")
     p.add_argument("--max-drafts", type=int)
-    for name, text in (("onboarding-scan", "read supplier emails and files, and update the onboarding workbook"),
+    for name, text in (("onboarding-scan", "read every supplier's emails and files (each supplier folder, the "
+                                           "supplier workbook, your settings) and update the onboarding workbook"),
                        ("onboarding-draft", "onboarding-scan, then draft a pre-filled questionnaire email to each "
-                                            "supplier")):
+                                            "supplier you listed or who has emailed you")):
         p = sub.add_parser(name, help=text)
-        p.add_argument("--supplier", action="append", help="only this supplier (part of its name); repeatable")
+        p.add_argument("--supplier", action="append", help="only this supplier (part of its name or folder name); repeatable. "
+                       "onboarding-draft then drafts to it even if it hasn't emailed you")
         p.add_argument("--force", action="store_true", help="read everything again even if nothing new arrived")
         p.add_argument("--dry-run", action="store_true", help="check and report, but save nothing")
         if name == "onboarding-draft":

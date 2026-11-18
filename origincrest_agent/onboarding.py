@@ -1,17 +1,21 @@
 """Supplier onboarding: what each supplier has told OriginCrest so far, and what is still missing.
 
-For each supplier listed under `onboarding.suppliers` in config.suppliers.yaml:
+Suppliers are found by themselves: every subfolder of your supplier folder (by default the folder the supplier
+workbook is in, e.g. OriginCrest suppliers\\Alpha Coffee), every supplier in the supplier workbook with an email
+address once they've written to you, and anyone listed under `onboarding.suppliers` in config.suppliers.yaml.
+The same supplier found in several places is merged by name, email and email domain. For each one:
 
 1. Read its emails (your Inbox / reply folders). Save every attachment into
    <onboarding folder>/<Supplier>/Received/, and read any files you put in <Supplier>/Add files here/
-   (WhatsApp exports, photos of price lists, documents from their website) or in the supplier's own
-   `folders` (e.g. a folder you already keep for them). Zip files are opened and the files inside read.
+   (WhatsApp exports, photos of price lists, documents from their website) or in the supplier's own folder
+   (subfolders included). Zip files are opened and the files inside read.
 2. Ask Claude to answer OriginCrest's onboarding questionnaire (onboarding_questions.py) from that material
    only, with the source of every answer. Your own research row (from the supplier workbook) is used too,
    but answers that rest only on it are marked "From research - to confirm".
 3. Write Supplier_Onboarding.xlsx (Summary, Answers, Files, Questionnaire). Your own columns, "Your notes"
    and "Confirmed", are kept when the agent rewrites it.
-4. onboarding-draft also saves a questionnaire email per supplier to your Drafts folder, with an Excel
+4. onboarding-draft also saves a questionnaire email to your Drafts folder for each supplier you listed or who
+   has emailed you (or that you name with --supplier), with an Excel
    questionnaire attached. It's pre-filled with what the supplier already told you, and asks them to confirm
    and complete it. Nothing is ever sent.
 
@@ -41,11 +45,12 @@ from openpyxl.utils import get_column_letter
 
 from . import compliance
 from .config import expand_path
-from .dedupe import FREE_MAIL_DOMAINS, core_name
+from .dedupe import _GENERIC_WORDS, _LEGAL_WORDS, EMAIL_RE, FREE_MAIL_DOMAINS, core_name, name_tokens
 from .llm import obj
 from .mailer import build_message, parse_message
 from .onboarding_questions import BY_KEY, KEYS, QUESTIONS, SECTIONS
 from .runtime import RunContext
+from .schema import match_header, match_weak_header
 from .supplier_config import WORKBOOK
 from .utils import clean, fmt_date, log
 from .workbook import HEADER_FILL, excel_lock_reason
@@ -103,7 +108,26 @@ EXTRACT_SCHEMA = obj({
 })
 
 
-# --- settings ----------------------------------------------------------------------------------------------
+# --- which suppliers ----------------------------------------------------------------------------------------
+#
+# Suppliers are found in three places and merged by name, email and email domain:
+#   1. onboarding.suppliers in config.suppliers.yaml (optional: name, emails, domains, contact, folders);
+#   2. every subfolder of onboarding.suppliers_folder (default: the folder the supplier workbook is in),
+#      so a new supplier is picked up as soon as you make a folder for it;
+#   3. every supplier in the supplier workbook with an email address, so its replies are read even before
+#      you make a folder for it. These are shown only once they've sent something.
+
+FROM_SETTINGS, FROM_FOLDER, FROM_WORKBOOK = "settings", "folder", "supplier workbook"
+# Words that don't tell suppliers apart: company forms, Indonesian business words and places.
+_COMPANY_FORMS = {"pt", "cv", "ud", "tbk", "persero", "koperasi", "kopkar", "kud", "kpd", "firma", "fa"}
+_PLACE_WORDS = {"indonesia", "indonesian", "indo", "java", "jawa", "sumatra", "sumatera", "aceh", "gayo", "bali",
+                "flores", "sulawesi", "toraja", "papua", "lampung", "kopi", "export", "exports", "exporter",
+                "exporters", "single", "origin", "origins", "green", "bean", "agro", "nusantara"}
+# Free-mail domains common in Indonesia, on top of dedupe.FREE_MAIL_DOMAINS: never used to match a supplier.
+_FREE_MAIL = FREE_MAIL_DOMAINS | {"yahoo.co.id", "ymail.com", "rocketmail.com", "outlook.co.id", "hotmail.co.id",
+                                  "live.co.id", "yahoo.co.uk", "hotmail.co.uk", "yandex.com", "qq.com", "163.com",
+                                  "126.com", "naver.com", "rediffmail.com", "mail.ru", "aim.com"}
+
 
 @dataclass
 class SupplierSpec:
@@ -113,27 +137,163 @@ class SupplierSpec:
     match: str
     contact: str
     folders: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=lambda: [FROM_SETTINGS])
+    aliases: list[str] = field(default_factory=list)   # other names it goes by (its folder, its workbook row)
+    watch: list[str] = field(default_factory=list)     # more addresses to read from (never emailed)
+    research: str | None = None                        # its row in the supplier workbook (None: not looked up)
 
     @property
     def folder_name(self) -> str:
         return safe_name(self.name)
+
+    @property
+    def configured(self) -> bool:
+        return FROM_SETTINGS in self.sources
+
+    @property
+    def names(self) -> list[str]:
+        return [self.name, *self.aliases, *([self.match] if self.match else [])]
+
+    @property
+    def addresses(self) -> list[str]:
+        return list(dict.fromkeys(self.emails + self.watch))
 
 
 def safe_name(text: str) -> str:
     return _UNSAFE.sub("", str(text)).strip().rstrip(".") or "Supplier"
 
 
-def supplier_specs(cfg, report, only: list[str] | None = None) -> list[SupplierSpec]:
+def _name_keys(name: str) -> list[tuple[frozenset, frozenset]]:
+    """(distinctive words, all words) for a name and for any short name in brackets, e.g. "(JSC)"."""
+    keys = []
+    for part in [name, *re.findall(r"\(([^)]*)\)", str(name or ""))]:
+        words = frozenset(t for t in name_tokens(part) if t not in _LEGAL_WORDS and t not in _COMPANY_FORMS)
+        if words:
+            keys.append((frozenset(words - _GENERIC_WORDS - _PLACE_WORDS), words))
+    return keys
+
+
+def names_match(a: str, b: str) -> bool:
+    """Whether two names are the same supplier: "ALPHA Coffee" = "PT Alpha Coffee Indonesia", "JSC" =
+    "Java Specialty Coffee (JSC)", "Omega" = "Omega Single Origins". Names made only of common words
+    ("Gayo Coffee") must match in full."""
+    for strong_a, all_a in _name_keys(a):
+        for strong_b, all_b in _name_keys(b):
+            if all_a == all_b:
+                return True
+            if strong_a and strong_b and (strong_a <= strong_b or strong_b <= strong_a) \
+                    and len("".join(min(strong_a, strong_b, key=len))) >= 3:
+                return True
+    return False
+
+
+def _domain(address: str) -> str:
+    domain = address.rsplit("@", 1)[-1].lower() if "@" in address else ""
+    return "" if domain in _FREE_MAIL else domain
+
+
+def _same_supplier(spec: SupplierSpec, name: str, emails: list[str]) -> bool:
+    if set(emails) & set(spec.addresses):
+        return True
+    if {_domain(e) for e in emails} & set(spec.domains):
+        return True
+    return any(names_match(n, name) for n in spec.names)
+
+
+def _pick(specs: list[SupplierSpec], name: str, emails: list[str], report, what: str) -> SupplierSpec | None:
+    """The one supplier this name / these emails belong to, or None (new, or too ambiguous to merge)."""
+    found = [s for s in specs if _same_supplier(s, name, emails)]
+    if len(found) > 1:
+        exact = [s for s in found if any(core_name(n) == core_name(name) for n in s.names)
+                 or set(emails) & set(s.addresses)]
+        if len(exact) == 1:
+            return exact[0]
+        report.add("Suppliers found", f"{what} looks like more than one supplier "
+                                      f"({', '.join(s.name for s in found)}), so it's kept separate. Rename it "
+                                      "to the supplier's full name to merge it.")
+        return None
+    return found[0] if found else None
+
+
+def _workbook_rows(cfg) -> list[dict]:
+    """Rows of the supplier workbook (every tab): company, emails, contact, status and the research text."""
+    path = cfg.workbook_path(WORKBOOK)
+    if not path.exists():
+        return []
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001 - the onboarding still works from folders and settings
+        log.warning("Couldn't read the supplier workbook %s: %s", path, exc)
+        return []
+    keep = ("Company", "Category", "Contact name", "Role", "Email", "Phone", "Website", "City", "State",
+            "Origins / coffees", "Services / offering", "Supplier certifications", "Export capability")
+    rows = []
+    try:
+        for ws in wb.worksheets:
+            it = ws.iter_rows(values_only=True)
+            headers = [clean(h) for h in next(it, ())]
+            keys = [match_header(h) or match_weak_header(h) for h in headers]
+            for values in it:
+                by_header = {h: clean(v) for h, v in zip(headers, values) if h and clean(v)}
+                by_key: dict[str, str] = {}
+                for k, v in zip(keys, values):
+                    if k and clean(v) and k not in by_key:
+                        by_key[k] = clean(v)
+                if not by_key.get("company"):
+                    continue
+                rows.append({
+                    "company": by_key["company"],
+                    "emails": list(dict.fromkeys(e.lower() for e in EMAIL_RE.findall(by_key.get("email", "")))),
+                    "contact": by_key.get("contact_name", ""),
+                    "status": by_key.get("status", "").lower(),
+                    "research": "\n".join(f"{k}: {by_header[k]}" for k in keep if by_header.get(k)),
+                })
+    finally:
+        wb.close()
+    return rows
+
+
+def suppliers_folder(cfg) -> Path | None:
+    """The folder whose subfolders are suppliers (onboarding.suppliers_folder; '' turns it off)."""
+    value = cfg["onboarding"].get("suppliers_folder")
+    if value is None:
+        return cfg.workbook_path(WORKBOOK).parent
+    return expand_path(value) if clean(value) else None
+
+
+def _supplier_folders(cfg, report) -> list[Path]:
+    root = suppliers_folder(cfg)
+    if root is None:
+        return []
+    if not root.is_dir():
+        report.add("Settings", f"Supplier folder not found: {root} (onboarding.suppliers_folder)")
+        return []
+    skip = {clean(s).lower() for s in cfg["onboarding"].get("skip_folders") or []}
+    own = onboarding_folder(cfg).resolve()
+    try:
+        found = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError as exc:
+        report.add("Errors", f"Couldn't list {root}: {exc.strerror or exc}")
+        return []
+    return [p for p in found if not p.name.startswith((".", "_", "~")) and p.name.lower() not in skip
+            and p.resolve() != own]
+
+
+def supplier_specs(cfg, report, only: list[str] | None = None, discover: bool = True,
+                   suppressed=None) -> list[SupplierSpec]:
+    """Every supplier to onboard: from your settings, your supplier folders and the supplier workbook.
+    `suppressed(address)` says whether an address has unsubscribed (those workbook rows are left out)."""
+    oc = cfg["onboarding"]
     specs: list[SupplierSpec] = []
-    for raw in cfg["onboarding"].get("suppliers") or []:
+    for raw in oc.get("suppliers") or []:
         if not isinstance(raw, dict) or not clean(raw.get("name")):
             report.add("Settings", f"onboarding.suppliers: an entry has no name and was skipped ({raw!r})")
             continue
-        emails = [clean(e).lower() for e in raw.get("emails") or [] if "@" in clean(e)]
+        emails = list(dict.fromkeys(clean(e).lower() for e in raw.get("emails") or [] if "@" in clean(e)))
         domains = []
         for d in raw.get("domains") or []:
             d = clean(d).lower().lstrip("@")
-            if d in FREE_MAIL_DOMAINS:
+            if d in _FREE_MAIL:
                 report.add("Settings", f"{raw['name']}: domain '{d}' is a free-mail domain (it would match "
                                        "everyone on it) and was ignored; list the exact address under emails")
             elif d:
@@ -141,10 +301,87 @@ def supplier_specs(cfg, report, only: list[str] | None = None) -> list[SupplierS
         specs.append(SupplierSpec(clean(raw["name"]), emails, domains, clean(raw.get("workbook_match")),
                                   clean(raw.get("contact")),
                                   [clean(f) for f in raw.get("folders") or [] if clean(f)]))
-    if only:
-        wanted = [o.lower() for o in only]
-        specs = [s for s in specs if any(w in s.name.lower() for w in wanted)]
-    return specs
+    rows = _workbook_rows(cfg)
+    for row in rows:  # your research on the suppliers you listed
+        for spec in specs:
+            if spec.research is None and _same_supplier(spec, row["company"], row["emails"]):
+                spec.research = row["research"]
+                spec.watch += [e for e in row["emails"] if e not in spec.addresses]
+                spec.contact = spec.contact or row["contact"]
+    if discover and oc.get("from_supplier_workbook", True):
+        skip = cfg.skip_statuses
+        for row in rows:
+            if row["status"] in skip or any(_same_supplier(s, row["company"], row["emails"])
+                                            for s in specs if s.configured):
+                continue
+            emails = [e for e in row["emails"] if not (suppressed and suppressed(e))]
+            if not emails:
+                continue
+            domains = sorted({d for e in emails if (d := _domain(e))})
+            # The search adds a supplier once, so two rows are merged only when they share an email or domain.
+            spec = next((s for s in specs if not s.configured
+                         and (set(emails) & set(s.emails) or set(domains) & set(s.domains))), None)
+            if spec is None:
+                specs.append(SupplierSpec(row["company"], emails, domains, "", row["contact"],
+                                          sources=[FROM_WORKBOOK], research=row["research"]))
+            else:
+                spec.emails += [e for e in emails if e not in spec.emails]
+                spec.domains += [d for d in domains if d not in spec.domains]
+    if discover:
+        for path in _supplier_folders(cfg, report):
+            spec = next((s for s in specs if any(_same_path(f, path) for f in s.folders)), None) \
+                or _pick(specs, path.name, [], report, f"Folder '{path.name}'")
+            if spec is None:
+                spec = SupplierSpec(path.name, [], [], "", "", sources=[])
+                specs.append(spec)
+            elif path.name != spec.name and path.name not in spec.aliases:
+                spec.aliases.append(path.name)
+            if FROM_FOLDER not in spec.sources:
+                spec.sources.append(FROM_FOLDER)
+            if not any(_same_path(f, path) for f in spec.folders):
+                spec.folders.append(str(path))
+    for spec in specs:
+        if spec.research is None:
+            spec.research = next((r["research"] for r in rows if _same_supplier(spec, r["company"], r["emails"])),
+                                 "")
+    return only_named(specs, only)
+
+
+def only_named(specs: list[SupplierSpec], only: list[str] | None) -> list[SupplierSpec]:
+    """The suppliers whose name (or folder / workbook name) contains one of `only` (all when empty)."""
+    if not only:
+        return specs
+    wanted = [o.lower() for o in only]
+    return [s for s in specs if any(w in n.lower() for w in wanted for n in s.names)]
+
+
+def _same_path(a: str | Path, b: str | Path) -> bool:
+    try:
+        return expand_path(str(a)).resolve() == Path(b).resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
+def settle_names(specs: list[SupplierSpec], state: dict) -> None:
+    """Keep each supplier under the name it already has in the workbook and state, so a new folder or
+    workbook row for a known supplier doesn't start it afresh. A name you set in onboarding.suppliers wins:
+    its history moves to that name."""
+    known = state["suppliers"]
+    taken = {s.name for s in specs}
+    for spec in specs:
+        if spec.name in known:
+            continue
+        old = next((a for a in spec.aliases if a in known and a not in taken), None)
+        if old is None:
+            old = next((n for n in known if n not in taken and any(names_match(n, a) for a in spec.names)), None)
+        if old is None:
+            continue
+        if spec.configured:
+            known[spec.name] = known.pop(old)
+        else:
+            spec.aliases = [a for a in spec.aliases if a != old] + [spec.name]
+            spec.name = old
+        taken.add(spec.name)
 
 
 def onboarding_folder(cfg) -> Path:
@@ -295,7 +532,7 @@ class SupplierRun:
 
 def _sender_matches(spec: SupplierSpec, address: str) -> bool:
     address = address.lower()
-    return address in spec.emails or any(address.endswith("@" + d) or address.endswith("." + d)
+    return address in spec.addresses or any(address.endswith("@" + d) or address.endswith("." + d)
                                          for d in spec.domains)
 
 
@@ -310,8 +547,15 @@ def _save_file(folder: Path, when: date, name: str, data: bytes, dry_run: bool) 
     return str(path)
 
 
-def collect(ctx: RunContext, mailbox, spec: SupplierSpec, entry: dict, base: Path) -> SupplierRun:
-    """Read new emails and files for one supplier into its state entry (and save attachments)."""
+def wrote_to_you(spec: SupplierSpec, senders: set[str] | None) -> bool:
+    """Whether anyone at this supplier is among `senders` (None: not known, so look)."""
+    return senders is None or any(_sender_matches(spec, s) for s in senders)
+
+
+def collect(ctx: RunContext, mailbox, spec: SupplierSpec, entry: dict, base: Path,
+            senders: set[str] | None = None) -> SupplierRun:
+    """Read new emails and files for one supplier into its state entry (and save attachments). `senders` is
+    everyone who wrote in the lookback period, so suppliers who didn't aren't searched for."""
     oc = ctx.cfg["onboarding"]
     run = SupplierRun(spec, entry)
     messages, files = entry.setdefault("messages", {}), entry.setdefault("files", {})
@@ -321,10 +565,10 @@ def collect(ctx: RunContext, mailbox, spec: SupplierSpec, entry: dict, base: Pat
 
     def too_big(name: str, size: int) -> bool:
         return size > (max_zip if Path(name).suffix.lower() == ".zip" else max_file)
-    if mailbox is not None and (spec.emails or spec.domains):
+    if mailbox is not None and (spec.addresses or spec.domains) and wrote_to_you(spec, senders):
         since = ctx.today - timedelta(days=int(oc["lookback_days"]))
         own = getattr(mailbox, "own_addresses", set())
-        raws = mailbox.raw_messages_from(spec.emails, spec.domains, since,
+        raws = mailbox.raw_messages_from(spec.addresses, spec.domains, since,
                                          max_bytes=int(float(oc["max_message_mb"]) * 1024 * 1024))
         for folder_name, uid, raw in raws:
             info = parse_message(raw, folder_name, uid)
@@ -392,25 +636,10 @@ def collect(ctx: RunContext, mailbox, spec: SupplierSpec, entry: dict, base: Pat
 
 def research_text(ctx: RunContext, spec: SupplierSpec) -> str:
     """The supplier's row from the supplier workbook: OriginCrest's own research, to confirm."""
-    path = ctx.cfg.workbook_path(WORKBOOK)
-    if not path.exists():
-        return ""
-    try:
-        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    except Exception:  # noqa: BLE001 - research is a nice-to-have
-        return ""
-    target = core_name(spec.match or spec.name)
-    keep = ("Company", "Category", "Contact name", "Role", "Email", "Phone", "Website", "City", "State",
-            "Origins / coffees", "Services / offering", "Supplier certifications", "Export capability")
-    for ws in wb.worksheets:
-        rows = ws.iter_rows(values_only=True)
-        headers = [clean(h) for h in next(rows, ())]
-        for row in rows:
-            data = dict(zip(headers, row))
-            company = core_name(clean(data.get("Company")))
-            if company and target and (target in company or company in target):
-                return "\n".join(f"{k}: {clean(data[k])}" for k in keep if clean(data.get(k)))
-    return ""
+    if spec.research is None:
+        spec.research = next((r["research"] for r in _workbook_rows(ctx.cfg)
+                              if _same_supplier(spec, r["company"], r["emails"])), "")
+    return spec.research
 
 
 # --- asking Claude ----------------------------------------------------------------------------------------
@@ -481,7 +710,7 @@ def extract(ctx: RunContext, spec: SupplierSpec, entry: dict, research: str) -> 
 
 # --- the onboarding workbook -------------------------------------------------------------------------------
 
-SUMMARY_HEADERS = ["Supplier", "Emails / domains", "Emails read", "Files read", "Files not read",
+SUMMARY_HEADERS = ["Supplier", "Emails / domains", "Found in", "Emails read", "Files read", "Files not read",
                    "Last email", "Answered", "Missing", "To confirm", "Red flags", "Where it stands",
                    "Questionnaire drafted", "Last scanned", "Your notes"]
 ANSWER_HEADERS = ["Supplier", "Section", "No.", "Question", "Answer (from supplier)", "Source", "Status",
@@ -545,7 +774,7 @@ def write_workbook(ctx: RunContext, specs: list[SupplierSpec], state: dict) -> P
         return None
     user_answers, user_summary = _user_values(path)
     wb = openpyxl.Workbook()
-    summary = _sheet(wb, "Summary", SUMMARY_HEADERS, [30, 30, 10, 10, 12, 12, 10, 10, 10, 40, 60, 14, 12, 40],
+    summary = _sheet(wb, "Summary", SUMMARY_HEADERS, [30, 30, 28, 10, 10, 12, 12, 10, 10, 10, 40, 60, 14, 12, 40],
                      first=True)
     answers = _sheet(wb, "Answers", ANSWER_HEADERS, [26, 22, 6, 50, 60, 30, 16, 36, 12, 36, 10])
     files_ws = _sheet(wb, "Files", FILE_HEADERS, [26, 12, 28, 40, 36, 60, 40])
@@ -558,7 +787,8 @@ def write_workbook(ctx: RunContext, specs: list[SupplierSpec], state: dict) -> P
         files = entry.get("files", {})
         read = sum(1 for f in files.values() if str(f.get("status", "")).startswith("Read"))
         q = entry.get("questionnaire", {})
-        row = [spec.name, ", ".join(spec.emails + ["@" + d for d in spec.domains]), len(msgs), read,
+        row = [spec.name, ", ".join(spec.addresses + ["@" + d for d in spec.domains]) or "none known",
+               found_in(spec), len(msgs), read,
                len(files) - read, fmt_date(date.fromisoformat(last)) if last else "", answered, missing, confirm,
                "\n".join(entry.get("red_flags", [])), entry.get("summary", "") or "Nothing received yet",
                fmt_date(date.fromisoformat(q["drafted_on"])) if q.get("drafted_on") else "",
@@ -666,13 +896,25 @@ def _body(spec: SupplierSpec, entry: dict) -> str:
             "Kind regards,")
 
 
+def recipients(spec: SupplierSpec, entry: dict, own: set[str]) -> tuple[str, list[str]]:
+    """To and Cc of the questionnaire: the addresses you listed under onboarding.suppliers (first = To), or,
+    for a supplier found by itself, the person who last wrote to you."""
+    if spec.configured and spec.emails:
+        return spec.emails[0], spec.emails[1:]
+    latest = max(entry.get("messages", {}).values(), key=lambda m: m.get("date", ""), default=None)
+    if latest and latest.get("from") and latest["from"] not in own:
+        return latest["from"], []
+    return (spec.emails[0], []) if spec.emails else ("", [])
+
+
 def draft_questionnaire(ctx: RunContext, mailbox, sender, spec: SupplierSpec, entry: dict, base: Path,
                         again: bool) -> None:
     report = ctx.report
-    if not spec.emails:
-        report.add("Questionnaire not drafted", f"{spec.name}: no email address under onboarding.suppliers")
+    to_addr, cc = recipients(spec, entry, getattr(mailbox, "own_addresses", set()))
+    if not to_addr:
+        report.add("Questionnaire not drafted", f"{spec.name}: no email address known (add one to its row in "
+                                                "the supplier workbook, or list it under onboarding.suppliers)")
         return
-    to_addr, cc = spec.emails[0], spec.emails[1:]
     if ctx.state.is_suppressed(to_addr):
         report.add("Questionnaire not drafted", f"{spec.name}: {to_addr} has unsubscribed")
         return
@@ -721,18 +963,68 @@ def draft_questionnaire(ctx: RunContext, mailbox, sender, spec: SupplierSpec, en
 
 # --- the workflow --------------------------------------------------------------------------------------------
 
+def _worth_listing(spec: SupplierSpec, state: dict) -> bool:
+    entry = state["suppliers"].get(spec.name, {})
+    return spec.configured or FROM_FOLDER in spec.sources or bool(entry.get("messages") or entry.get("files"))
+
+
+def found_in(spec: SupplierSpec) -> str:
+    parts = []
+    if spec.configured:
+        parts.append("your settings")
+    if FROM_FOLDER in spec.sources or spec.folders:
+        parts.append("folder " + ", ".join(Path(str(f).replace("\\", "/")).name for f in spec.folders))
+    if FROM_WORKBOOK in spec.sources:
+        parts.append("supplier workbook")
+    return "; ".join(parts)
+
+
+def _report_found(ctx: RunContext, every: list[SupplierSpec], shown: list[SupplierSpec], new: list[str],
+                  state: dict) -> None:
+    report, root = ctx.report, suppliers_folder(ctx.cfg)
+    watched = [s for s in every if FROM_WORKBOOK in s.sources]
+    wrote = sum(1 for s in watched if state["suppliers"].get(s.name, {}).get("messages"))
+    report.add("Suppliers found", f"{len(shown)} to onboard ({sum(s.configured for s in shown)} are in your "
+               f"settings, {sum(FROM_FOLDER in s.sources for s in shown)} have a folder in "
+               f"{root.name if root else '(folders turned off)'}). Supplier workbook: {len(watched)} suppliers with "
+               f"an email address are watched for replies; {wrote} have written to you.")
+    for spec in shown:
+        if spec.aliases:
+            report.add("Suppliers found", f"{spec.name} = {', '.join(repr(a) for a in spec.aliases)}")
+    if new:
+        report.add("New suppliers", ", ".join(new))
+    folder_only = [s for s in shown if FROM_FOLDER in s.sources and not (s.addresses or s.domains)]
+    if folder_only:
+        report.add("Only the folder is read", f"{', '.join(s.name for s in folder_only)}: no email address known. "
+                   "Add it to their row in the supplier workbook (or list them under onboarding.suppliers) to read "
+                   "their emails too.")
+    for spec in folder_only:  # a near miss: "Rimba Estate" and the workbook's "PT Rimba Agrolestari"
+        words = {w for strong, _ in _name_keys(spec.name) for w in strong}
+        close = [s.name for s in every if s is not spec and s.addresses
+                 and words & {w for strong, _ in _name_keys(s.name) for w in strong}]
+        if close:
+            report.add("Only the folder is read", f"Is '{spec.name}' the same as {', '.join(close[:3])}? If so, "
+                       "rename the folder to that name and they're merged on the next run.")
+
+
 def run_onboarding(ctx: RunContext, suppliers: list[str] | None = None, force: bool = False, draft: bool = False,
                    again: bool = False) -> int:
     """Read what the suppliers sent, update the onboarding workbook and, with draft=True, save questionnaire
     drafts. Returns the number of suppliers whose answers were (re)extracted."""
     cfg, report = ctx.cfg, ctx.report
-    specs = supplier_specs(cfg, report, suppliers)
+    state = load_state(cfg)
+    every = supplier_specs(cfg, report, suppressed=ctx.state.is_suppressed)
+    settle_names(every, state)
+    specs = only_named(every, suppliers)
     if not specs:
-        report.add("Nothing to do", "No suppliers listed under onboarding.suppliers in config.suppliers.yaml"
-                   + (f" matching {', '.join(suppliers)}" if suppliers else ""))
+        root = suppliers_folder(cfg)
+        report.add("Nothing to do", f"No supplier matches {', '.join(suppliers)}" if suppliers else
+                   "No suppliers found. Make a folder for each supplier"
+                   + (f" in {root}" if root else " (onboarding.suppliers_folder)")
+                   + ", give them an email address in the supplier workbook, or list them under "
+                   "onboarding.suppliers in config.suppliers.yaml")
         return 0
     base = onboarding_folder(cfg)
-    state = load_state(cfg)
     mailbox = None
     try:
         mailbox = ctx.mailbox_factory()
@@ -740,16 +1032,30 @@ def run_onboarding(ctx: RunContext, suppliers: list[str] | None = None, force: b
     except Exception as exc:  # noqa: BLE001 - files you added can still be read
         report.add("Errors", f"IMAP connection failed, emails not read: {exc}")
         mailbox = None
-    extracted = 0
+    senders = None
+    if mailbox is not None and hasattr(mailbox, "senders_since"):
+        try:
+            senders = mailbox.senders_since(ctx.today - timedelta(days=int(cfg["onboarding"]["lookback_days"])))
+        except Exception as exc:  # noqa: BLE001 - then every supplier is searched for, as before
+            log.warning("Couldn't list who wrote to you (%s); searching for each supplier instead", exc)
+    extracted, shown, new = 0, [], []
     try:
         for spec in specs:
+            known = spec.name in state["suppliers"]
             entry = state["suppliers"].setdefault(spec.name, {})
-            run = collect(ctx, mailbox, spec, entry, base)
+            run = collect(ctx, mailbox, spec, entry, base, senders)
+            has_material = bool(entry.get("messages") or entry.get("files"))
+            if not (has_material or spec.configured or FROM_FOLDER in spec.sources or suppliers):
+                if not entry.get("questionnaire"):  # a workbook supplier that hasn't written: nothing to show
+                    state["suppliers"].pop(spec.name, None)
+                continue
+            shown.append(spec)
+            if not known:
+                new.append(spec.name)
             for note in run.notes:
                 report.add("Files not read", f"{spec.name}: {note}")
             research = research_text(ctx, spec)
             signature = _signature(entry, research)
-            has_material = bool(entry.get("messages") or entry.get("files"))
             if ctx.dry_run:
                 report.add("Would read", f"{spec.name}: {run.new_messages} new emails, {run.new_files} new files "
                                          "(a dry run doesn't send anything to Claude)")
@@ -772,6 +1078,7 @@ def run_onboarding(ctx: RunContext, suppliers: list[str] | None = None, force: b
                                      f"confirm, {missing} missing")
             for flag in entry.get("red_flags", []):
                 report.add("Red flags (check before paying)", f"{spec.name}: {flag}")
+        _report_found(ctx, every, shown, new, state)
         if draft:
             if mailbox is None:
                 report.add("Questionnaire not drafted", "No mailbox connection")
@@ -780,12 +1087,24 @@ def run_onboarding(ctx: RunContext, suppliers: list[str] | None = None, force: b
                 if sender.problems:
                     report.add("Errors", "No drafts until this is set: " + ", ".join(sender.problems))
                 else:
-                    for spec in specs:
-                        draft_questionnaire(ctx, mailbox, sender, spec, state["suppliers"][spec.name], base, again)
+                    not_yet = []
+                    for spec in shown:
+                        entry = state["suppliers"][spec.name]
+                        # Only suppliers you listed, ones in touch by email, or ones you name with --supplier.
+                        if spec.configured or entry.get("messages") or suppliers:
+                            draft_questionnaire(ctx, mailbox, sender, spec, entry, base, again)
+                        else:
+                            not_yet.append(spec.name)
+                    if not_yet:
+                        report.add("Questionnaire not drafted", f"{', '.join(not_yet)}: they haven't emailed you "
+                                   "yet. To draft one anyway, name them: onboarding-draft --supplier \"Name\"")
         if ctx.dry_run:
             report.add("Dry run", "Nothing saved: no files, workbook or drafts")
             return extracted
-        path = write_workbook(ctx, specs, state)
+        # The workbook lists everyone, also when --supplier narrowed this run to some of them.
+        done = {s.name for s in specs}
+        listed = [s for s in every if s in shown or s.name not in done and _worth_listing(s, state)]
+        path = write_workbook(ctx, listed, state)
         if path:
             report.add("Onboarding workbook", str(path))
         save_state(cfg, state)
