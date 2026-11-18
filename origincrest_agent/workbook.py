@@ -124,7 +124,11 @@ class Row:
 
     @property
     def kind(self) -> str:
-        """'buyer' (gets intro emails, 10-day follow-ups) or 'freight' (gets RFQs, 5-day follow-ups)."""
+        """'buyer' (gets intro emails, 10-day follow-ups) or 'freight' (gets RFQs, 5-day follow-ups).
+
+        Rows in the supplier agent's workbook (default_kind: supplier) are 'supplier'."""
+        if self.sheet.kind == "supplier":
+            return "supplier"
         record_type = self.text("record_type").lower()
         if record_type.startswith("lead"):
             return "buyer"
