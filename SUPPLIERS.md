@@ -150,8 +150,8 @@ scripts\suppliers.cmd search [--dry-run] [--max-rows N] [--max-drafts N] [--focu
 scripts\suppliers.cmd draft [--dry-run] [--max-drafts N]
 scripts\suppliers.cmd redraft "Kopi Gayo" [--dry-run]
 scripts\suppliers.cmd followup [--dry-run] [--max-drafts N]
-scripts\suppliers.cmd onboarding-scan [--supplier "Akan"] [--force] [--dry-run]
-scripts\suppliers.cmd onboarding-draft [--supplier "Akan"] [--again] [--dry-run]
+scripts\suppliers.cmd onboarding-scan [--supplier "Example"] [--force] [--dry-run]
+scripts\suppliers.cmd onboarding-draft [--supplier "Example"] [--again] [--dry-run]
 scripts\suppliers.cmd onboarding-template
 scripts\suppliers.cmd flush      # write rows still queued from a run when Excel was open
 ```
