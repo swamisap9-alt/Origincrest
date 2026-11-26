@@ -125,6 +125,18 @@ def test_new_outreach_off_stops_freight_searches_and_rfqs_but_not_follow_ups(cfg
     run_leads(make_ctx("leads"))
     assert not [m for m in mailbox.drafts if "indofreight" in m["To"]]  # no new RFQ
 
-    sent_rfq(mailbox)  # an RFQ you sent earlier is still chased
+    sent_rfq(mailbox)  # an RFQ you sent earlier is still chased...
     assert run_followup(make_ctx("followup")) == 1
     assert "seaway" in mailbox.drafts[-1]["To"]
+
+
+def test_follow_ups_off_leaves_the_freight_workbook_alone(cfg, agent, mailbox, make_ctx):
+    cfg.data["discovery"]["profiles"]["rfq"].update(new_outreach=False, follow_ups=False)
+    sent_rfq(mailbox)  # ...unless follow-ups are off for that workbook too
+    before = cfg.workbook_path("rfq").read_bytes()
+    ctx = make_ctx("followup")
+    assert run_followup(ctx) == 0
+    assert mailbox.drafts == []
+    assert cfg.workbook_path("rfq").read_bytes() == before  # not even reply checks written
+    assert ctx.report.sections["Follow-ups off"] == ["rfq: follow_ups: false - not checked"]
+    assert cfg.follow_ups("master")

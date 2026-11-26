@@ -93,8 +93,9 @@ Open ─(bounce)─────────────────────�
   current range (e.g. robusta for espresso blends as well as specialty single origins), re-read every 12
   hours. `check` shows what it read. Without it, the agent describes OriginCrest as Sumatra, Sulawesi, Java
   and Flores single origins.
-- **Coffee buyers only:** set `new_outreach: false` under `discovery.profiles.rfq` to stop finding and
-  emailing new freight forwarders and 3PLs. RFQs you've already sent are still followed up.
+- **Coffee buyers only:** under `discovery.profiles.rfq`, `new_outreach: false` stops finding and emailing
+  new freight forwarders and 3PLs, and `follow_ups: false` stops follow-ups and reply checks for every tab of
+  the RFQ workbook (including its contacts tab). Set both and the agent leaves that workbook alone.
 - **Wider buyer search:** besides the categories in your tabs, Discover also looks for commercial roasters
   with espresso blends, green coffee suppliers for home roasters, contract / private-label roasters and café
   groups with their own roastery (`discovery.profiles.master.categories`), a few categories each week.

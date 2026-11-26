@@ -80,7 +80,10 @@ def _call_block(row: Row, *, step: int, days_since: int, last: date, rtype: str,
 
 def run_followup(ctx: RunContext, max_drafts: int | None = None) -> int:
     cfg, report, fc = ctx.cfg, ctx.report, ctx.cfg["followup"]
-    names = [n for n in cfg["workbooks"] if n in fc["workbooks"] or cfg.lead_tabs(n)]
+    names = [n for n in cfg["workbooks"] if cfg.follow_ups(n) and (n in fc["workbooks"] or cfg.lead_tabs(n))]
+    for n in cfg["workbooks"]:
+        if not cfg.follow_ups(n):
+            report.add("Follow-ups off", f"{n}: follow_ups: false - not checked")
     stores = {}
     for name in names:
         try:

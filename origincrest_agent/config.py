@@ -81,9 +81,10 @@ DEFAULTS: dict[str, Any] = {
         # (Adelaide / South Australia, and all other states together).
         "profiles": {
             "rfq": {
-                # false = no new outreach from this workbook (no discovery, no first emails);
-                # follow-ups on contacts you've already emailed carry on.
+                # false = no new outreach from this workbook (no discovery, no first emails).
                 "new_outreach": True,
+                # false = no follow-ups or reply checks for any row in this workbook.
+                "follow_ups": True,
                 "adelaide_tab": "New Freight-3PL - Adelaide",
                 "other_tab": "New Freight-3PL - Other States",
                 "categories": ["Freight forwarders, customs brokers & 3PLs"],
@@ -91,6 +92,7 @@ DEFAULTS: dict[str, Any] = {
             },
             "master": {
                 "new_outreach": True,
+                "follow_ups": True,
                 "adelaide_tab": "New Leads - Adelaide",
                 "other_tab": "New Leads - Other States",
                 # Searched as well as the categories in your tabs (each run takes the next few).
@@ -288,6 +290,11 @@ class Config:
         """False when discovery and first emails are switched off for this workbook."""
         profile = self.profile(workbook)
         return bool(profile) and profile.get("new_outreach", True) is not False
+
+    def follow_ups(self, workbook: str) -> bool:
+        """False when follow-ups are switched off for this workbook (follow_ups: false in its profile)."""
+        profile = self.profile(workbook)
+        return not profile or profile.get("follow_ups", True) is not False
 
     def lead_tabs(self, workbook: str) -> set[str]:
         """Tabs in a workbook that hold the agent's new leads (plus leads.extra_tabs)."""

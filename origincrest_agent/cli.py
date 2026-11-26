@@ -82,9 +82,10 @@ def cmd_check(cfg, args) -> int:
                   "(other states)")
             for note in notes:
                 print(f"     [!] {note}")
+            if not cfg.follow_ups(name):
+                print("     follow-ups: OFF (follow_ups: false) - no reply checks or follow-up drafts")
             if not cfg.new_outreach(name):
-                print("     new outreach: OFF (new_outreach: false) - no searching or first emails; "
-                      "follow-ups on contacts you've emailed carry on")
+                print("     new outreach: OFF (new_outreach: false) - no searching or first emails")
                 continue
             print(f"     search categories ({len(cats)}):")
             for cat in cats:
