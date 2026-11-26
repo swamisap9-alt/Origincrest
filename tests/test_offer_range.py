@@ -88,10 +88,15 @@ def test_range_is_cached_and_last_good_copy_survives_an_outage(cfg):
     assert "last good copy" in later.describe()
 
 
-def test_long_range_is_trimmed(cfg):
-    cfg.data["offer"].update(range_sources=[URL], range_max_chars=80)
-    current = load_range(cfg, fetch=lambda url: "\n".join(f"Lot {i} | Arabica | Natural" for i in range(50)))
-    assert len(current.text) < 140 and "list trimmed" in current.text
+def test_long_website_cant_crowd_out_the_price_list(cfg, tmp_path):
+    _, csv_file, _ = catalogue_files(tmp_path)
+    cfg.data["offer"].update(range_sources=[URL, str(csv_file)], range_max_chars=400)
+    page = "\n".join(f"Website line {i} about OriginCrest" for i in range(100))
+    current = load_range(cfg, fetch=lambda url: page)
+    assert "Bali Kintamani" in current.text  # the short price list is kept whole...
+    (_, web_kept, web_read), (_, csv_kept, csv_read) = current.sizes
+    assert csv_kept == csv_read and web_kept == 400 - csv_kept < web_read  # ...the website gets the rest
+    assert "trimmed to fit" in current.text
 
 
 def test_run_loads_the_range_for_emails(cfg, tmp_path, make_ctx):
@@ -111,6 +116,12 @@ def test_buyer_discovery_prompt_describes_the_range(cfg):
     freight = discovery_prompt(kind="freight", category="3PL", region="other", focus=[], n=5, known=[],
                                examples=[], offer=offer_text(cfg))
     assert "Kalibaru" not in freight
+
+
+def test_switches_also_work_under_the_workbooks_section(cfg):
+    cfg.data["workbooks"]["rfq"].update(new_outreach=False, follow_ups=False)
+    assert not cfg.new_outreach("rfq") and not cfg.follow_ups("rfq")
+    assert cfg.new_outreach("master") and cfg.follow_ups("master")
 
 
 def test_new_outreach_off_stops_freight_searches_and_rfqs_but_not_follow_ups(cfg, agent, mailbox, make_ctx):

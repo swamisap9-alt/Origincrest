@@ -205,7 +205,7 @@ DEFAULTS: dict[str, Any] = {
         # and/or files (Excel or CSV price list, Word or text). Used for fit scores and all emails.
         "range_sources": [],
         "range_refresh_hours": 12,
-        "range_max_chars": 15000,
+        "range_max_chars": 24000,  # shared fairly between the sources
         "origins": [],
         "facts": [],
         "call_to_action": "Offer to send green samples and a current offer sheet.",
@@ -287,15 +287,18 @@ class Config:
     def profile(self, workbook: str) -> dict | None:
         return self.data["discovery"]["profiles"].get(workbook)
 
+    def _switched_off(self, workbook: str, key: str) -> bool:
+        """`key: false` under the workbook's discovery profile, or under its workbooks: entry."""
+        sections = (self.profile(workbook) or {}, self.data["workbooks"].get(workbook) or {})
+        return any(isinstance(s, dict) and s.get(key, True) is False for s in sections)
+
     def new_outreach(self, workbook: str) -> bool:
         """False when discovery and first emails are switched off for this workbook."""
-        profile = self.profile(workbook)
-        return bool(profile) and profile.get("new_outreach", True) is not False
+        return bool(self.profile(workbook)) and not self._switched_off(workbook, "new_outreach")
 
     def follow_ups(self, workbook: str) -> bool:
-        """False when follow-ups are switched off for this workbook (follow_ups: false in its profile)."""
-        profile = self.profile(workbook)
-        return not profile or profile.get("follow_ups", True) is not False
+        """False when follow-ups are switched off for this workbook."""
+        return not self._switched_off(workbook, "follow_ups")
 
     def lead_tabs(self, workbook: str) -> set[str]:
         """Tabs in a workbook that hold the agent's new leads (plus leads.extra_tabs)."""

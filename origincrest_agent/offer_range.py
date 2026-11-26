@@ -99,12 +99,13 @@ def fetch_url(url: str, timeout: float = 20) -> str:
 
 class OfferRange:
     def __init__(self, text: str = "", loaded: list[str] | None = None, problems: list[str] | None = None,
-                 fetched_at: str = "", from_cache: bool = False):
+                 fetched_at: str = "", from_cache: bool = False, sizes: list | None = None):
         self.text = text
         self.loaded = loaded or []
         self.problems = problems or []
         self.fetched_at = fetched_at
         self.from_cache = from_cache
+        self.sizes = [tuple(s) for s in sizes or []]  # (source, characters kept, characters read)
 
     def describe(self) -> str:
         if not self.text:
@@ -112,6 +113,17 @@ class OfferRange:
         when = self.fetched_at[:16].replace("T", " ")
         how = "last good copy from " + when if self.from_cache else "read " + when
         return f"{len(self.text):,} characters from {len(self.loaded)} source(s) ({how})"
+
+
+def _shares(lengths: list[int], limit: int) -> list[int]:
+    """Characters each source may keep: an equal share, with what short sources don't need passed on."""
+    shares = [0] * len(lengths)
+    remaining = limit
+    order = sorted(range(len(lengths)), key=lengths.__getitem__)
+    for done, i in enumerate(order):
+        shares[i] = min(lengths[i], remaining // (len(order) - done))
+        remaining -= shares[i]
+    return shares
 
 
 def load_range(cfg, *, refresh: bool = False, fetch=fetch_url, now: datetime | None = None) -> OfferRange:
@@ -122,7 +134,8 @@ def load_range(cfg, *, refresh: bool = False, fetch=fetch_url, now: datetime | N
         return OfferRange()
     now = now or datetime.now()
     cache_path = cfg.data_dir / "offer_range.json"
-    key = hashlib.sha256("\n".join(sources).encode()).hexdigest()[:16]
+    limit = int(offer.get("range_max_chars", 24000))
+    key = hashlib.sha256("\n".join([*sources, str(limit)]).encode()).hexdigest()[:16]
     cached = None
     try:
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -131,9 +144,10 @@ def load_range(cfg, *, refresh: bool = False, fetch=fetch_url, now: datetime | N
     if cached and cached.get("key") == key and not refresh:
         age = now - datetime.fromisoformat(cached["fetched_at"])
         if age < timedelta(hours=float(offer.get("range_refresh_hours", 12))):
-            return OfferRange(cached["text"], cached["loaded"], [], cached["fetched_at"])
+            return OfferRange(cached["text"], cached["loaded"], [], cached["fetched_at"],
+                              sizes=cached.get("sizes"))
 
-    parts, loaded, problems = [], [], []
+    found, problems = [], []
     for source in sources:
         try:
             if source.lower().startswith(("http://", "https://")):
@@ -148,25 +162,30 @@ def load_range(cfg, *, refresh: bool = False, fetch=fetch_url, now: datetime | N
             log.warning("Couldn't read range source %s: %s", source, exc)
             continue
         if text.strip():
-            parts.append(f"--- From {source} ---\n{text.strip()}")
-            loaded.append(source)
+            found.append((source, text.strip()))
         else:
             problems.append(f"{source}: no text found")
 
-    if not parts:
+    if not found:
         if cached and cached.get("text"):
             problems.append("using the last good copy")
-            return OfferRange(cached["text"], cached["loaded"], problems, cached["fetched_at"], from_cache=True)
+            return OfferRange(cached["text"], cached["loaded"], problems, cached["fetched_at"], from_cache=True,
+                              sizes=cached.get("sizes"))
         return OfferRange(problems=problems)
+    # Each source gets a fair share of the size limit, so a long website can't crowd out your price list.
+    shares = _shares([len(text) for _, text in found], limit)
+    parts, sizes = [], []
+    for (source, text), share in zip(found, shares):
+        kept = text if len(text) <= share else text[:share].rsplit("\n", 1)[0] + "\n(... trimmed to fit)"
+        parts.append(f"--- From {source} ---\n{kept}")
+        sizes.append((source, min(len(text), share), len(text)))
     text = "\n\n".join(parts)
-    limit = int(offer.get("range_max_chars", 15000))
-    if len(text) > limit:
-        text = text[:limit].rsplit("\n", 1)[0] + "\n(... range continues - list trimmed to fit)"
+    loaded = [source for source, _ in found]
     stamp = now.isoformat(timespec="seconds")
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps({"key": key, "fetched_at": stamp, "loaded": loaded, "text": text}),
-                              encoding="utf-8")
+        cache_path.write_text(json.dumps({"key": key, "fetched_at": stamp, "loaded": loaded, "text": text,
+                                          "sizes": sizes}), encoding="utf-8")
     except OSError as exc:
         log.debug("Couldn't cache the range: %s", exc)
-    return OfferRange(text, loaded, problems, stamp)
+    return OfferRange(text, loaded, problems, stamp, sizes=sizes)

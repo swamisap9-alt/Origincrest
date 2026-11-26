@@ -130,6 +130,6 @@ sender:
 # certifications or volumes, and doesn't quote prices from your range unless you add that as a fact).
 offer:
   summary: ''                  # leave blank to let the range speak for itself
-  range_sources: []            # e.g. ['https://<your website>/green-coffee',
+  range_sources: []            # e.g. ['https://www.example.com.au/our-coffees',
                                #       'C:\Users\swami\OneDrive\Documents\Origincrest\Green coffee range.xlsx']
   facts: []                    # e.g. ["Green samples (200 g) posted free within Australia", "Stock held in Adelaide"]

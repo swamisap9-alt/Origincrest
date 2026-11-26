@@ -101,9 +101,15 @@ def cmd_check(cfg, args) -> int:
         print(("[OK] " if current.text else "[X] ") + f"Your range: {current.describe()}")
         for problem in current.problems:
             print(f"     [!] {problem}")
-        if current.text:
-            preview = [line for line in current.text.splitlines() if line.strip()][:8]
-            print("     starts with:\n" + "\n".join(f"        {line[:110]}" for line in preview))
+        for source, kept, read in current.sizes:
+            print(f"     {source}: {kept:,} characters" + (f" (trimmed from {read:,})" if kept < read else ""))
+        lines, shown = current.text.splitlines(), 0
+        for line in lines:  # the first few lines of each source
+            if line.startswith("--- From "):
+                shown = 0
+            elif line.strip() and shown < 4:
+                print(f"        {line[:110]}")
+                shown += 1
         ok &= bool(current.text)
     else:
         print("[!] Your range: offer.range_sources is empty - emails describe OriginCrest from offer.summary "
