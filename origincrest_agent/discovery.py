@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from .dedupe import entity_keys
 from .llm import AgentError
-from .prompts import DISCOVERY_SYSTEM, RECORD_COMPANIES, discovery_prompt
+from .prompts import DISCOVERY_SYSTEM, RECORD_COMPANIES, discovery_prompt, offer_text
 from .runtime import ChangeSet, RunContext, commit
 from .schema import category_kind
 from .state import decode_values
@@ -129,8 +129,6 @@ def profile_categories(cfg, store: WorkbookStore, notes: list[str]) -> list[Cate
         if label and label.lower() not in found:
             found[label.lower()] = Category(label, category_kind(label), tuple(examples or [])[:5], source)
 
-    for label in profile.get("categories") or []:
-        add(label, "config")
     for spec in profile.get("category_tabs") or []:
         spec = {"tab": spec} if isinstance(spec, str) else spec
         view = find_tab(store, spec["tab"])
@@ -153,6 +151,8 @@ def profile_categories(cfg, store: WorkbookStore, notes: list[str]) -> list[Cate
         if len(found) == before and spec.get("fallback"):
             for part in _split(spec["fallback"]):
                 add(part, "config fallback")
+    for label in profile.get("categories") or []:  # yours from the tabs first, then these
+        add(label, "config")
     exclude = {e.strip().lower() for e in profile.get("exclude_categories") or []}
     return [c for c in found.values() if c.label.lower() not in exclude]
 
@@ -188,7 +188,10 @@ def run_discover(ctx: RunContext, workbooks: list[str] | None = None, categories
                  regions: list[str] | None = None, max_rows: int | None = None) -> int:
     cfg, report = ctx.cfg, ctx.report
     d = cfg["discovery"]
-    names = workbooks or [n for n in d["profiles"] if n in cfg["workbooks"]]
+    names = workbooks or [n for n in d["profiles"] if n in cfg["workbooks"] and cfg.new_outreach(n)]
+    for n in d["profiles"]:
+        if not workbooks and n in cfg["workbooks"] and not cfg.new_outreach(n):
+            report.add("Categories", f"{n}: new outreach is off (new_outreach: false) - not searched")
     stores = {n: WorkbookStore(n, cfg.workbook_path(n), cfg).load() for n in names}
     week = ctx.today.isocalendar()[1]
     notes: list[str] = []
@@ -225,7 +228,8 @@ def run_discover(ctx: RunContext, workbooks: list[str] | None = None, categories
                 system=DISCOVERY_SYSTEM,
                 prompt=discovery_prompt(kind=seg.category.kind, category=seg.category.label, region=seg.region,
                                         focus=focus, n=d["candidates_per_segment"], known=index.known_names(250),
-                                        examples=list(seg.category.examples)),
+                                        examples=list(seg.category.examples),
+                                        offer=offer_text(cfg, range_chars=4000)),
                 record_tool=RECORD_COMPANIES,
                 effort=d["effort"],
                 web_searches=d["web_searches_per_segment"],

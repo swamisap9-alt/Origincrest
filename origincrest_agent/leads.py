@@ -336,7 +336,8 @@ class LeadRun:
 def run_leads(ctx: RunContext, max_drafts: int | None = None, redraft: list[str] | None = None) -> int:
     """Draft for new leads; with `redraft` (company names), draft again for just those companies."""
     cfg = ctx.cfg
-    names = [n for n in cfg["workbooks"] if cfg.lead_tabs(n)]
+    # Workbooks with new_outreach: false get no first emails (an explicit redraft still works).
+    names = [n for n in cfg["workbooks"] if cfg.lead_tabs(n) and (redraft is not None or cfg.new_outreach(n))]
     stores = {}
     for name in names:
         try:

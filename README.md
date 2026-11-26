@@ -88,6 +88,16 @@ Open ─(bounce)─────────────────────�
 - Quote vs lead: taken from the `Record type` column (the agent fills it in for new leads), otherwise from the
   Category (logistics words like freight / 3PL / customs mean quote), otherwise from the workbook: RFQ workbook
   rows are quotes, master workbook rows are leads.
+- **Your range:** list your website's range / shop pages and/or your price list or catalogue file (Excel, CSV,
+  Word or text) under `offer.range_sources`. Fit scores, intro emails and follow-ups then use your whole
+  current range (e.g. robusta for espresso blends as well as specialty single origins), re-read every 12
+  hours. `check` shows what it read. Without it, the agent describes OriginCrest as Sumatra, Sulawesi, Java
+  and Flores single origins.
+- **Coffee buyers only:** set `new_outreach: false` under `discovery.profiles.rfq` to stop finding and
+  emailing new freight forwarders and 3PLs. RFQs you've already sent are still followed up.
+- **Wider buyer search:** besides the categories in your tabs, Discover also looks for commercial roasters
+  with espresso blends, green coffee suppliers for home roasters, contract / private-label roasters and café
+  groups with their own roastery (`discovery.profiles.master.categories`), a few categories each week.
 - **Talking points:** the new-lead tabs have a `Talking points` column. Anything you write there (how you met,
   what to mention) is built into that contact's email.
 

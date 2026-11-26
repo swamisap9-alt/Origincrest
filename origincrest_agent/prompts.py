@@ -8,7 +8,6 @@ import re
 from .llm import obj, strict_tool
 
 STATES = ["SA", "VIC", "NSW", "QLD", "WA", "TAS", "ACT", "NT", ""]
-ORIGINS = ["Sumatra", "Sulawesi", "Java", "Flores"]
 
 CONTACT_RULES = """\
 Rules for contact details (strict):
@@ -25,6 +24,8 @@ so in the notes.
 
 DEFAULT_SUMMARY = ("OriginCrest supplies Indonesian single-origin green coffee - Sumatra, Sulawesi, Java and "
                    "Flores - to Australian roasters.")
+RANGE_SUMMARY = ("OriginCrest supplies Indonesian green coffee to Australian roasters and coffee businesses. "
+                 "Its current range is listed below.")
 
 
 def _filled(text) -> str:
@@ -33,11 +34,15 @@ def _filled(text) -> str:
     return re.sub(r"[\s\-:]+$", "", text).strip()
 
 
-def offer_text(cfg) -> str:
-    """Background about OriginCrest. Optional in config.yaml; a default is used when it's blank."""
+def offer_text(cfg, range_chars: int | None = None) -> str:
+    """Background about OriginCrest. Optional in config.yaml; a default is used when it's blank.
+
+    Includes the current range (offer.range_sources) when one was loaded, cut to `range_chars`.
+    """
     offer = cfg["offer"]
+    current = getattr(cfg, "offer_range", "") or ""
     lines = [f"Business: {cfg['sender']['business_name']}",
-             f"Summary: {_filled(offer.get('summary')) or DEFAULT_SUMMARY}"]
+             f"Summary: {_filled(offer.get('summary')) or (RANGE_SUMMARY if current else DEFAULT_SUMMARY)}"]
     origins = [o for o in (_filled(x) for x in offer.get("origins") or []) if o]
     if origins:
         lines.append("Origins offered: " + "; ".join(origins))
@@ -45,14 +50,19 @@ def offer_text(cfg) -> str:
         lines.append(f"Fact: {fact}")
     if _filled(offer.get("call_to_action")):
         lines.append(f"Preferred next step: {_filled(offer['call_to_action'])}")
+    if current:
+        if range_chars is not None and len(current) > range_chars:
+            current = current[:range_chars].rsplit("\n", 1)[0] + "\n(... more in the full range)"
+        lines.append("Current range (from OriginCrest's own website / catalogue - the only source for what it "
+                     "sells; don't quote prices from it unless the instructions allow):\n" + current)
     return "\n".join(lines)
 
 
 # --- Workflow 1: discovery -------------------------------------------------
 
 DISCOVERY_SYSTEM = f"""\
-You find Australian businesses for OriginCrest, an importer of Indonesian single-origin green coffee \
-(Sumatra, Sulawesi, Java, Flores). Each request names one category from OriginCrest's contact sheets: \
+You find Australian businesses for OriginCrest, an importer of Indonesian green coffee (each request \
+describes its current range). Each request names one category from OriginCrest's contact sheets: \
 either coffee businesses that could buy or trade OriginCrest's coffee (roasters, importers, wholesalers, \
 traders and similar), or logistics providers that can move and store coffee (freight forwarders, customs \
 brokers, 3PLs). Search the web, then record what you found with the record_companies tool.
@@ -93,14 +103,15 @@ fumigation, container unpacking, food-grade or bonded warehousing, pallet storag
 interstate distribution. Put that evidence in coffee_evidence."""
 
 _BUYER_TASK = """\
-They should be businesses that buy, roast, import, wholesale or trade coffee and could take Indonesian \
-single-origin green coffee from OriginCrest. Specialty-grade focus is a plus. Café chains that don't roast, \
-machine sellers and instant-coffee brands don't count unless the category says so. Put what shows they \
-deal in coffee in coffee_evidence."""
+They should be businesses that buy, roast, import, wholesale or trade coffee and could take green coffee \
+from OriginCrest's range (below). Specialty roasters buying single origins and roasters whose blends could \
+use what the range offers (e.g. robusta or commercial grades for espresso blends) both count. Café chains \
+that don't roast, machine sellers and instant-coffee brands don't count unless the category says so. Put \
+what shows they deal in coffee in coffee_evidence."""
 
 
 def discovery_prompt(*, kind: str, category: str, region: str, focus: list[str], n: int, known: list[str],
-                     examples: list[str]) -> str:
+                     examples: list[str], offer: str = "") -> str:
     if region == "adelaide":
         where = "based in Adelaide or elsewhere in South Australia, or with an Adelaide office"
     else:
@@ -112,6 +123,8 @@ def discovery_prompt(*, kind: str, category: str, region: str, focus: list[str],
     if examples:
         lines.append("Businesses already in OriginCrest's sheet under this category (find others like them): "
                      + ", ".join(examples))
+    if offer and kind != "freight":
+        lines.append("What OriginCrest offers:\n" + offer)
     lines.append(f"Already known (skip these): {', '.join(known) if known else '(none yet)'}")
     lines.append("When you've finished searching, call record_companies once with everything that qualifies.")
     return "\n\n".join(lines)
@@ -121,19 +134,24 @@ def discovery_prompt(*, kind: str, category: str, region: str, focus: list[str],
 
 RESEARCH_SYSTEM = f"""\
 You research Australian coffee businesses (roasters, importers, wholesalers, traders and similar) for \
-OriginCrest and judge how well each one fits OriginCrest's Indonesian single-origin green coffees. Use web \
-search and web fetch on the business's own website and online shop first, then press, awards and \
-directories. Record your findings with the record_research tool.
+OriginCrest and judge how well each one fits OriginCrest's current range of Indonesian green coffees (given \
+in each request). Use web search and web fetch on the business's own website and online shop first, then \
+press, awards and directories. Record your findings with the record_research tool.
 
 Score fit from 0 to 100:
-- Specialty focus and single-origin range (up to 30)
+- Match with OriginCrest's range: single origins they could feature, or blends the range could supply \
+(e.g. robusta or commercial grades for espresso blends) (up to 30)
 - Whether they buy, import or distribute green coffee in volumes OriginCrest can serve (up to 25)
 - Indonesian interest: they sell Indonesian coffees now, have before, or have a gap an Indonesian lot \
 would fill (up to 25)
 - Practicalities: wholesale/café supply, scale, location - Adelaide/SA is a plus (up to 20)
 Importers and traders can be partners (buying or distributing OriginCrest lots) or competitors: score how \
-likely a partnership is. Be calibrated: 70+ needs clear evidence of specialty single-origin buying; under \
-40 for businesses that don't deal in coffee, closed businesses, or commodity/instant focus.
+likely a partnership is. Be calibrated: 70+ needs clear evidence they buy green coffee of a kind \
+OriginCrest's range covers; under 40 for businesses that don't deal in coffee, closed businesses, or an \
+instant-coffee focus.
+
+best_fit_origins: the one to three coffees from OriginCrest's range that suit them best, named as the range \
+names them.
 
 personalisation_hooks are 2-3 specific facts from the business's own materials that an intro email could \
 mention (a current single origin, their roasting or sourcing approach, an award), each with its source URL. \
@@ -157,7 +175,7 @@ RESEARCH_SCHEMA = obj({
     "contact_name": {"type": "string"},
     "contact_role": {"type": "string"},
     "fit_score": {"type": "integer"},
-    "best_fit_origins": {"type": "array", "items": {"type": "string", "enum": ORIGINS}},
+    "best_fit_origins": {"type": "array", "items": {"type": "string"}},
     "fit_rationale": {"type": "string", "description": "Two or three sentences"},
     "personalisation_hooks": {"type": "array", "items": obj({
         "fact": {"type": "string"}, "source_url": {"type": "string"}})},
@@ -195,8 +213,8 @@ OriginCrest's contacts spreadsheet and the web research on their business.
 
 Tailor it to the contact: use their name and role if the row has them, and build on anything OriginCrest \
 noted about them in the row (notes, talking points, how they met, category, services). Open with something \
-specific about their business from the research hooks, connect it to one or two OriginCrest origins that \
-suit them (for an importer or trader, frame it as supply or partnership), and offer one easy next step. Ask \
+specific about their business from the research hooks, connect it to one or two coffees from OriginCrest's \
+current range that suit them (for an importer or trader, frame it as supply or partnership), and offer one easy next step. Ask \
 at most one question.
 
 Write like a person who knows coffee, not a marketing department: Australian English, plain text, \
@@ -268,8 +286,10 @@ Two situations:
 - quote: OriginCrest asked a freight forwarder, customs broker or 3PL for a quote and hasn't heard back. \
 Briefly restate what was requested (from the row details and the original email), ask whether they can \
 quote or need anything else, and mention timing if the details give it.
-- lead: OriginCrest emailed a coffee business (roaster, importer, wholesaler, trader) and hasn't heard back. Keep it lighter than the first email, add \
-one new useful thing (e.g. offer to send samples, mention an origin that suits them) and give an easy out.
+- lead: OriginCrest emailed a coffee business (roaster, importer, wholesaler, trader) and hasn't heard back. \
+Keep it lighter than the first email, add one new useful thing and give an easy out. If OriginCrest's current \
+range (in the background below) has coffees the earlier email didn't mention, lead with the one or two that \
+best suit them (e.g. a robusta for their espresso blend); otherwise offer samples.
 
 Plain text, Australian English, 50-110 words; later follow-ups are shorter. Use only facts in the row \
 details, the original email and the OriginCrest background. End with a short sign-off such as "Thanks," - \

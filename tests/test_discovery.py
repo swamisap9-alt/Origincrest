@@ -70,6 +70,11 @@ def test_master_categories_come_from_its_tabs(cfg):
     assert [(c.label, c.kind) for c in cats] == [
         ("Cafe groups", "buyer"), ("Roasters", "buyer"),             # every category in New Prospects Oct-26
         ("Importers", "buyer"), ("Wholesalers & Traders", "buyer"),  # matching ones from All contacts (not 3PL)
+        # then the wider buyer categories from config, so robusta / commercial buyers are searched too
+        ("Commercial and wholesale roasters with espresso blends", "buyer"),
+        ("Green coffee suppliers for home roasters", "buyer"),
+        ("Contract and private-label coffee roasters", "buyer"),
+        ("Cafe groups with their own roastery", "buyer"),
     ]
     assert cats[1].examples == ("Bean There Roasters",)
     assert notes == []
@@ -84,7 +89,7 @@ def test_category_fallback_and_missing_tab(cfg):
     store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
     notes = []
     labels = [c.label for c in profile_categories(cfg, store, notes)]
-    assert labels == ["Cafe groups", "Roasters", "Importers", "Wholesalers", "Traders"]
+    assert labels[:5] == ["Cafe groups", "Roasters", "Importers", "Wholesalers", "Traders"]
     assert any("Does not exist" in n for n in notes)
 
 

@@ -27,10 +27,12 @@ claude:
 discovery:
   profiles:
     rfq:                        # freight forwarders, customs brokers and 3PLs -> RFQ emails
+      new_outreach: true        # false = stop finding and emailing new ones; follow-ups on RFQs you sent carry on
       adelaide_tab: New Freight-3PL - Adelaide
       other_tab: New Freight-3PL - Other States
       categories: ['Freight forwarders, customs brokers & 3PLs']
     master:                     # categories read from your own tabs -> intro emails (RFQs for logistics ones)
+      new_outreach: true
       adelaide_tab: New Leads - Adelaide
       other_tab: New Leads - Other States
       category_tabs:
@@ -38,6 +40,12 @@ discovery:
         - tab: All contacts                    # only the categories containing these words
           match: [importer, roaster, wholesal, trader]
           fallback: 'Importers, Roasters, Wholesalers & Traders'
+      # Also searched, after the categories in your tabs (leave out to keep these defaults):
+      categories:
+        - Commercial and wholesale roasters with espresso blends
+        - Green coffee suppliers for home roasters
+        - Contract and private-label coffee roasters
+        - Cafe groups with their own roastery
       exclude_categories: []    # e.g. ['Cafe groups']
   categories_per_run: 4         # with more categories than this, each week takes the next few
   max_new_rows_per_workbook: 20
@@ -111,10 +119,14 @@ sender:
   phone: ''
   website: ''
 
-# Optional background about OriginCrest that emails may mention. Leave it as is and the agent uses
-# "OriginCrest supplies Indonesian single-origin green coffee - Sumatra, Sulawesi, Java and Flores -
-# to Australian roasters". Add facts only if you want them used (the agent never invents prices,
-# certifications or volumes).
+# Background about OriginCrest that emails may mention. Point range_sources at your current range - your
+# website's range / shop pages and/or your price list or catalogue file - and fit scores, intro emails and
+# follow-ups all use it (re-read every 12 hours; `check` shows what was read). With no range_sources the
+# agent says "OriginCrest supplies Indonesian single-origin green coffee - Sumatra, Sulawesi, Java and
+# Flores - to Australian roasters". Add facts only if you want them used (the agent never invents prices,
+# certifications or volumes, and doesn't quote prices from your range unless you add that as a fact).
 offer:
-  summary: ''
+  summary: ''                  # leave blank to let the range speak for itself
+  range_sources: []            # e.g. ['https://<your website>/green-coffee',
+                               #       'C:\Users\swami\OneDrive\Documents\Origincrest\Green coffee range.xlsx']
   facts: []                    # e.g. ["Green samples (200 g) posted free within Australia", "Stock held in Adelaide"]

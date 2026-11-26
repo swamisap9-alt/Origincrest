@@ -30,6 +30,20 @@ def _context(cfg, workflow: str, dry_run: bool) -> RunContext:
     )
 
 
+def _load_offer_range(ctx: RunContext) -> None:
+    """Read your current range (offer.range_sources) for this run's fit scores and emails."""
+    from .offer_range import load_range
+
+    if not ctx.cfg["offer"].get("range_sources"):
+        return
+    current = load_range(ctx.cfg)
+    ctx.cfg.offer_range = current.text
+    ctx.report.add("Your range", current.describe() if current.text else
+                   "couldn't be read - emails use offer.summary only")
+    for problem in current.problems:
+        ctx.report.add("Your range", problem)
+
+
 def _finish(ctx: RunContext, history: bool = True) -> None:
     usage = log_usage(ctx._agent)
     path = ctx.report.write(ctx.cfg.data_dir / "reports", usage, history=history)
@@ -68,6 +82,10 @@ def cmd_check(cfg, args) -> int:
                   "(other states)")
             for note in notes:
                 print(f"     [!] {note}")
+            if not cfg.new_outreach(name):
+                print("     new outreach: OFF (new_outreach: false) - no searching or first emails; "
+                      "follow-ups on contacts you've emailed carry on")
+                continue
             print(f"     search categories ({len(cats)}):")
             for cat in cats:
                 email = "RFQ email" if cat.kind == "freight" else "intro email"
@@ -75,6 +93,21 @@ def cmd_check(cfg, args) -> int:
                 print(f"        - {cat.label}  [{email}; from {cat.source}]{where}")
             ok &= bool(cats)
     from .config import expand_path
+    from .offer_range import load_range
+
+    if cfg["offer"].get("range_sources"):
+        current = load_range(cfg, refresh=True)
+        print(("[OK] " if current.text else "[X] ") + f"Your range: {current.describe()}")
+        for problem in current.problems:
+            print(f"     [!] {problem}")
+        if current.text:
+            preview = [line for line in current.text.splitlines() if line.strip()][:8]
+            print("     starts with:\n" + "\n".join(f"        {line[:110]}" for line in preview))
+        ok &= bool(current.text)
+    else:
+        print("[!] Your range: offer.range_sources is empty - emails describe OriginCrest from offer.summary "
+              "(or the built-in Sumatra / Sulawesi / Java / Flores line). Add your website's range page or your "
+              "price list so fit scores and emails use your full range.")
 
     ds = cfg["drive_sync"]
     for label, folder in (("OneDrive folder", ds["source"]), ("Google Drive folder", ds["destination"])):
@@ -192,6 +225,8 @@ def run_workflow(cfg, args) -> int:
     busy = False
     try:
         with AgentLock(cfg.data_dir / "agent.lock", wait_minutes=0 if quick_check else 45), keep_awake():
+            if args.command in ("discover", "leads", "redraft", "followup"):
+                _load_offer_range(ctx)
             if args.command == "discover":
                 split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
                 run_discover(ctx, workbooks=split(args.workbook), categories=split(args.categories),

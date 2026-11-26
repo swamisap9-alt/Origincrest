@@ -81,15 +81,25 @@ DEFAULTS: dict[str, Any] = {
         # (Adelaide / South Australia, and all other states together).
         "profiles": {
             "rfq": {
+                # false = no new outreach from this workbook (no discovery, no first emails);
+                # follow-ups on contacts you've already emailed carry on.
+                "new_outreach": True,
                 "adelaide_tab": "New Freight-3PL - Adelaide",
                 "other_tab": "New Freight-3PL - Other States",
                 "categories": ["Freight forwarders, customs brokers & 3PLs"],
                 "category_tabs": [],
             },
             "master": {
+                "new_outreach": True,
                 "adelaide_tab": "New Leads - Adelaide",
                 "other_tab": "New Leads - Other States",
-                "categories": [],
+                # Searched as well as the categories in your tabs (each run takes the next few).
+                "categories": [
+                    "Commercial and wholesale roasters with espresso blends",
+                    "Green coffee suppliers for home roasters",
+                    "Contract and private-label coffee roasters",
+                    "Cafe groups with their own roastery",
+                ],
                 # Search categories are read from the Category column of these tabs.
                 # match: keep only categories containing one of these words (empty = all).
                 # fallback: used if the tab has none of them.
@@ -188,7 +198,12 @@ DEFAULTS: dict[str, Any] = {
     # Optional background about OriginCrest for the emails. Blank values fall back to a default.
     "offer": {
         "summary": "",
-        "origins": ["Sumatra", "Sulawesi", "Java", "Flores"],
+        # Your current range, read at most every range_refresh_hours: web pages (shop / range pages)
+        # and/or files (Excel or CSV price list, Word or text). Used for fit scores and all emails.
+        "range_sources": [],
+        "range_refresh_hours": 12,
+        "range_max_chars": 15000,
+        "origins": [],
         "facts": [],
         "call_to_action": "Offer to send green samples and a current offer sheet.",
     },
@@ -241,6 +256,7 @@ class Config:
     def __init__(self, data: dict[str, Any], source: Path | None = None):
         self.data = data
         self.source = source
+        self.offer_range = ""  # your current range (offer.range_sources), loaded at the start of a run
 
     def __getitem__(self, key: str) -> Any:
         return self.data[key]
@@ -267,6 +283,11 @@ class Config:
 
     def profile(self, workbook: str) -> dict | None:
         return self.data["discovery"]["profiles"].get(workbook)
+
+    def new_outreach(self, workbook: str) -> bool:
+        """False when discovery and first emails are switched off for this workbook."""
+        profile = self.profile(workbook)
+        return bool(profile) and profile.get("new_outreach", True) is not False
 
     def lead_tabs(self, workbook: str) -> set[str]:
         """Tabs in a workbook that hold the agent's new leads (plus leads.extra_tabs)."""
