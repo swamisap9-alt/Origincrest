@@ -75,6 +75,7 @@ def _research_values(data: dict) -> dict:
     if clean(data.get("size_evidence")):
         size += f" ({clean(data['size_evidence'])})"
     return {
+        "buys": clean(data.get("buys")),
         "roast_profile": clean(data.get("what_they_roast")),
         "size": size,
         "sourcing": clean(data.get("sourcing")),
@@ -87,7 +88,7 @@ def _research_values(data: dict) -> dict:
 
 
 def _email_context(data: dict) -> dict:
-    keep = ("company_name", "city", "state", "what_they_roast", "sourcing", "current_indonesian_coffees",
+    keep = ("company_name", "city", "state", "buys", "what_they_roast", "sourcing", "current_indonesian_coffees",
             "wholesale", "best_fit_origins", "fit_rationale", "personalisation_hooks")
     return {k: data.get(k) for k in keep}
 

@@ -52,8 +52,8 @@ def sheet(cfg, name="master", tab=LEADS_ADELAIDE):
 def test_research_score_and_intro(cfg, agent, mailbox, make_ctx):
     seed_buyers(cfg)
     # Order: rows you added yourself first, then the agent's finds.
-    agent.research_queue = [research("No Email Roasters", 70), research("Hills Roasting Co", 82),
-                            research("Low Fit Cafe", 30)]
+    agent.research_queue = [research("No Email Roasters", 70), research("Hills Roasting Co", 82, buys="Green"),
+                            research("Low Fit Cafe", 30, buys="Roasted")]
     ctx = make_ctx("leads")
     assert run_leads(ctx) == 1
     # Only the new-lead tab is worked on: nothing in "All contacts" / "New Prospects Oct-26" is researched.
@@ -74,6 +74,9 @@ def test_research_score_and_intro(cfg, agent, mailbox, make_ctx):
     assert hills["Best-fit origins"] == "Sumatra, Flores"
     assert hills["Coffee offering"] == "Light-roast single origins, filter focus"
     assert hills["Draft subject"] == "Indonesian green for your range"
+    assert hills["Would buy"] == "Green" and rows["Low Fit Cafe"]["Would buy"] == "Roasted"
+    intro_prompt = next(p for kind, p in agent.calls if kind == "structured")
+    assert '"buys": "Green"' in intro_prompt  # the email pitches what they'd buy
     assert rows["Low Fit Cafe"]["Status"] == "Researched - low fit"
     assert rows["No Email Roasters"]["Status"] == "No public email"
     assert rows["Existing Customer Roasters"]["Status"] == "Customer"

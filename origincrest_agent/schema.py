@@ -111,6 +111,7 @@ FIELDS: list[Field] = [
     ), width=40),
     Field("size", "Size estimate", ("size estimate", "size", "company size", "scale"), width=16),
     Field("sourcing", "Sourcing", ("sourcing", "sourcing approach", "green sourcing"), width=34),
+    Field("buys", "Would buy", ("would buy", "buys", "green or roasted", "product interest"), width=12),
     Field("indonesian_now", "Current Indonesian coffees", (
         "current indonesian coffees", "indonesian offering", "indonesian coffees",
     ), width=30),
@@ -133,7 +134,7 @@ DISCOVERY_KEYS = [
 ]
 FOLLOWUP_KEYS = ["record_type", "last_contacted", "next_action_date", "last_reply", "followup_count", "agent_notes"]
 LEAD_KEYS = [
-    "roast_profile", "size", "sourcing", "indonesian_now", "fit_score", "fit_origins", "fit_rationale",
+    "buys", "roast_profile", "size", "sourcing", "indonesian_now", "fit_score", "fit_origins", "fit_rationale",
     "researched_on", "draft_created", "draft_subject",
 ]
 

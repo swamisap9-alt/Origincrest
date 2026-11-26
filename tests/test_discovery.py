@@ -75,6 +75,7 @@ def test_master_categories_come_from_its_tabs(cfg):
         ("Green coffee suppliers for home roasters", "buyer"),
         ("Contract and private-label coffee roasters", "buyer"),
         ("Cafe groups with their own roastery", "buyer"),
+        ("Independent cafes and cafe groups buying roasted coffee", "buyer"),
     ]
     assert cats[1].examples == ("Bean There Roasters",)
     assert notes == []

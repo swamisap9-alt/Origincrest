@@ -101,6 +101,7 @@ DEFAULTS: dict[str, Any] = {
                     "Green coffee suppliers for home roasters",
                     "Contract and private-label coffee roasters",
                     "Cafe groups with their own roastery",
+                    "Independent cafes and cafe groups buying roasted coffee",
                 ],
                 # Search categories are read from the Category column of these tabs.
                 # match: keep only categories containing one of these words (empty = all).

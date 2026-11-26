@@ -48,6 +48,7 @@ discovery:
         - Green coffee suppliers for home roasters
         - Contract and private-label coffee roasters
         - Cafe groups with their own roastery
+        - Independent cafes and cafe groups buying roasted coffee
       exclude_categories: []    # e.g. ['Cafe groups']
   categories_per_run: 4         # with more categories than this, each week takes the next few
   max_new_rows_per_workbook: 20

@@ -93,6 +93,9 @@ Open ─(bounce)─────────────────────�
   current range (e.g. robusta for espresso blends as well as specialty single origins), re-read every 12
   hours. `check` shows what it read. Without it, the agent describes OriginCrest as Sumatra, Sulawesi, Java
   and Flores single origins.
+- **Green and roasted:** each lead's research decides what they'd buy from you (`Would buy`: Green, Roasted
+  or Both). Roasters, importers and traders are pitched green beans; cafés, restaurants, retailers, office
+  coffee and gifting companies are pitched roasted coffee; follow-ups keep to the same pitch.
 - **Coffee buyers only:** under `discovery.profiles.rfq`, `new_outreach: false` stops finding and emailing
   new freight forwarders and 3PLs, and `follow_ups: false` stops follow-ups and reply checks for every tab of
   the RFQ workbook (including its contacts tab). Set both and the agent leaves that workbook alone.

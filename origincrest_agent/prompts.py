@@ -22,10 +22,16 @@ so in the notes.
 - Leave any field you couldn't confirm as an empty string. Accuracy matters more than completeness."""
 
 
-DEFAULT_SUMMARY = ("OriginCrest supplies Indonesian single-origin green coffee - Sumatra, Sulawesi, Java and "
-                   "Flores - to Australian roasters.")
-RANGE_SUMMARY = ("OriginCrest supplies Indonesian green coffee to Australian roasters and coffee businesses. "
-                 "Its current range is listed below.")
+DEFAULT_SUMMARY = ("OriginCrest supplies Indonesian single-origin coffee - Sumatra, Sulawesi, Java and Flores - "
+                   "to Australian businesses: green beans for roasters, and roasted coffee for cafés, "
+                   "restaurants, retailers and other businesses.")
+RANGE_SUMMARY = ("OriginCrest supplies Indonesian coffee to Australian businesses: green beans for roasters, "
+                 "importers and traders, and roasted coffee for cafés, restaurants, retailers and other "
+                 "businesses. Its current range is listed below.")
+_GREEN_OR_ROASTED = """\
+OriginCrest sells both green and roasted coffee. Roasters, importers, traders and green-bean resellers buy \
+green; cafés, restaurants, grocers and other retailers, office-coffee providers, gifting companies and \
+online coffee shops buy roasted. Some buy both."""
 
 
 def _filled(text) -> str:
@@ -61,10 +67,11 @@ def offer_text(cfg, range_chars: int | None = None) -> str:
 # --- Workflow 1: discovery -------------------------------------------------
 
 DISCOVERY_SYSTEM = f"""\
-You find Australian businesses for OriginCrest, an importer of Indonesian green coffee (each request \
+You find Australian businesses for OriginCrest, which imports and roasts Indonesian coffee (each request \
 describes its current range). Each request names one category from OriginCrest's contact sheets: \
-either coffee businesses that could buy or trade OriginCrest's coffee (roasters, importers, wholesalers, \
-traders and similar), or logistics providers that can move and store coffee (freight forwarders, customs \
+either businesses that could buy or trade OriginCrest's green or roasted coffee (roasters, importers, \
+traders, cafés, restaurants, retailers and similar), or logistics providers that can move and store coffee \
+(freight forwarders, customs \
 brokers, 3PLs). Search the web, then record what you found with the record_companies tool.
 
 {CONTACT_RULES}
@@ -103,11 +110,11 @@ fumigation, container unpacking, food-grade or bonded warehousing, pallet storag
 interstate distribution. Put that evidence in coffee_evidence."""
 
 _BUYER_TASK = """\
-They should be businesses that buy, roast, import, wholesale or trade coffee and could take green coffee \
-from OriginCrest's range (below). Specialty roasters buying single origins and roasters whose blends could \
-use what the range offers (e.g. robusta or commercial grades for espresso blends) both count. Café chains \
-that don't roast, machine sellers and instant-coffee brands don't count unless the category says so. Put \
-what shows they deal in coffee in coffee_evidence."""
+They should be businesses that could buy OriginCrest's coffee: green beans (roasters - specialty single \
+origin or blends that could use what the range offers, e.g. robusta for espresso - importers, traders, \
+green-bean resellers) or roasted coffee (cafés, restaurants, grocers and other retailers, office-coffee \
+providers, gifting companies, online coffee shops). Machine-only sellers and instant-coffee brands don't count. \
+Put what shows they buy, sell or serve coffee in coffee_evidence."""
 
 
 def discovery_prompt(*, kind: str, category: str, region: str, focus: list[str], n: int, known: list[str],
@@ -133,28 +140,35 @@ def discovery_prompt(*, kind: str, category: str, region: str, focus: list[str],
 # --- Workflow 2: research, intro emails and RFQs ---------------------------
 
 RESEARCH_SYSTEM = f"""\
-You research Australian coffee businesses (roasters, importers, wholesalers, traders and similar) for \
-OriginCrest and judge how well each one fits OriginCrest's current range of Indonesian green coffees (given \
-in each request). Use web search and web fetch on the business's own website and online shop first, then \
+You research Australian businesses that buy coffee (roasters, importers, traders, cafés, restaurants, \
+retailers and similar) for OriginCrest and judge how well each one fits OriginCrest's current range of \
+Indonesian coffees (given in each request). {_GREEN_OR_ROASTED}
+
+Use web search and web fetch on the business's own website and online shop first, then \
 press, awards and directories. Record your findings with the record_research tool.
 
-Score fit from 0 to 100:
-- Match with OriginCrest's range: single origins they could feature, or blends the range could supply \
-(e.g. robusta or commercial grades for espresso blends) (up to 30)
-- Whether they buy, import or distribute green coffee in volumes OriginCrest can serve (up to 25)
-- Indonesian interest: they sell Indonesian coffees now, have before, or have a gap an Indonesian lot \
-would fill (up to 25)
-- Practicalities: wholesale/café supply, scale, location - Adelaide/SA is a plus (up to 20)
+First decide what they'd buy from OriginCrest (buys: Green, Roasted, Both or Unclear), then score fit from \
+0 to 100:
+- Match with OriginCrest's range: for green, single origins they could feature or blends the range could \
+supply (e.g. robusta for espresso blends); for roasted, a coffee from the range they could serve or stock \
+(up to 30)
+- Volume and buying: they buy green in volumes OriginCrest can serve, or buy roasted coffee regularly - café \
+and restaurant use, retail shelves, gifting, office supply (up to 25)
+- Indonesian interest: Indonesian coffee now or before, a gap an Indonesian coffee would fill, or an \
+Indonesian or Asian food focus (up to 25)
+- Practicalities: scale, freedom to choose suppliers, location - Adelaide/SA is a plus (up to 20)
 Importers and traders can be partners (buying or distributing OriginCrest lots) or competitors: score how \
-likely a partnership is. Be calibrated: 70+ needs clear evidence they buy green coffee of a kind \
-OriginCrest's range covers; under 40 for businesses that don't deal in coffee, closed businesses, or an \
-instant-coffee focus.
+likely a partnership is. A café or restaurant tied to one roaster (e.g. a supply-and-machine deal) or a \
+roaster's own café is a weaker fit for roasted coffee. Be calibrated: 70+ needs clear evidence they buy \
+coffee of a kind OriginCrest's range covers; under 40 for businesses that don't deal in coffee, closed \
+businesses, or an instant-coffee focus.
 
 best_fit_origins: the one to three coffees from OriginCrest's range that suit them best, named as the range \
 names them.
 
 personalisation_hooks are 2-3 specific facts from the business's own materials that an intro email could \
-mention (a current single origin, their roasting or sourcing approach, an award), each with its source URL. \
+mention (a current single origin, their roasting or sourcing approach, their menu or shelf, an award), each \
+with its source URL. \
 Use business facts only - nothing personal about individuals.
 
 {CONTACT_RULES}"""
@@ -164,10 +178,14 @@ RESEARCH_SCHEMA = obj({
     "website": {"type": "string"},
     "city": {"type": "string"},
     "state": {"type": "string", "enum": STATES},
-    "what_they_roast": {"type": "string", "description": "What they roast / sell / import: range, style, blends"},
+    "what_they_roast": {"type": "string",
+                        "description": "What they roast / sell / serve / import: range, style, blends, brands"},
+    "buys": {"type": "string", "enum": ["Green", "Roasted", "Both", "Unclear"],
+             "description": "What they'd buy from OriginCrest"},
     "size_estimate": {"type": "string", "enum": ["Micro", "Small", "Medium", "Large", "Unknown"]},
     "size_evidence": {"type": "string"},
-    "sourcing": {"type": "string", "description": "How they buy green: direct trade, named importers..."},
+    "sourcing": {"type": "string",
+                 "description": "How they buy coffee: direct trade, named importers, or the roaster(s) they use"},
     "current_indonesian_coffees": {"type": "string", "description": "Indonesian coffees they sell now, or empty"},
     "wholesale": {"type": "string", "enum": ["Yes", "No", "Unknown"]},
     "public_email": {"type": "string"},
@@ -207,9 +225,13 @@ EMAIL_SCHEMA = obj({
 })
 
 INTRO_SYSTEM = """\
-You write short first-contact emails from OriginCrest to Australian coffee businesses (roasters, \
-importers, wholesalers, traders and similar). Each email is written for one contact, from their row in \
-OriginCrest's contacts spreadsheet and the web research on their business.
+You write short first-contact emails from OriginCrest to Australian businesses that buy coffee (roasters, \
+importers, traders, cafés, restaurants, retailers and similar). Each email is written for one contact, from \
+their row in OriginCrest's contacts spreadsheet and the web research on their business.
+
+Pitch what the research says they'd buy (buys): green beans for roasters, importers and traders; roasted \
+coffee for cafés, restaurants, retailers and other businesses; for "Both", lead with the one that fits them \
+best and mention the other in a few words. Never offer roasted coffee to a roaster.
 
 Tailor it to the contact: use their name and role if the row has them, and build on anything OriginCrest \
 noted about them in the row (notes, talking points, how they met, category, services). Open with something \
@@ -286,8 +308,9 @@ Two situations:
 - quote: OriginCrest asked a freight forwarder, customs broker or 3PL for a quote and hasn't heard back. \
 Briefly restate what was requested (from the row details and the original email), ask whether they can \
 quote or need anything else, and mention timing if the details give it.
-- lead: OriginCrest emailed a coffee business (roaster, importer, wholesaler, trader) and hasn't heard back. \
-Keep it lighter than the first email, add one new useful thing and give an easy out. If OriginCrest's current \
+- lead: OriginCrest emailed a business that could buy its green or roasted coffee (roaster, importer, café, \
+retailer...) and hasn't heard back; pitch what the row says they'd buy ("Would buy"). Keep it lighter than \
+the first email, add one new useful thing and give an easy out. If OriginCrest's current \
 range (in the background below) has coffees the earlier email didn't mention, lead with the one or two that \
 best suit them (e.g. a robusta for their espresso blend); otherwise offer samples.
 

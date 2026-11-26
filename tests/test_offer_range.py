@@ -60,6 +60,7 @@ def test_range_read_from_website_and_files(cfg, tmp_path):
     assert RANGE_SUMMARY in text and "Current range" in text and "Argopuro | Robusta" in text
     assert "Argopuro | Robusta" in research_prompt({"Company": "Bean Co"}, cfg)
     assert "enum" not in RESEARCH_SCHEMA["properties"]["best_fit_origins"]["items"]  # any coffee in the range
+    assert RESEARCH_SCHEMA["properties"]["buys"]["enum"] == ["Green", "Roasted", "Both", "Unclear"]
     short = offer_text(cfg, range_chars=60)
     assert "more in the full range" in short and "Bali" not in short
 
