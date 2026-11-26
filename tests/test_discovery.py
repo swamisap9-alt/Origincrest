@@ -168,3 +168,37 @@ def test_dry_run_writes_nothing(cfg, agent, make_ctx):
     run_discover(ctx, workbooks=["rfq"], regions=["adelaide"])
     assert "Would add" in ctx.report.sections
     assert "New Freight-3PL - Adelaide" not in openpyxl.load_workbook(cfg.workbook_path("rfq")).sheetnames
+
+
+def test_long_prospect_list_becomes_a_few_real_searches(cfg):
+    wb = openpyxl.load_workbook(cfg.workbook_path("master"))
+    ws = wb["New Prospects Oct-26"]
+    for company, category in [
+        ("Monastery Coffee", "Roaster (specialty, wholesale)"), ("Dawn Patrol Coffee", "Roaster (wholesale)"),
+        ("Coffee in Common", "Roaster + café"), ("Carnevale Coffee Roasters", "Roaster / contract roaster"),
+        ("Barossa Coffee Roasters", "Roasters (unverified)"), ("Rio Coffee", "Commercial roaster & distributor"),
+        ("Southland Merchants", "Green importer (Brazil specialist): partner, not buyer"),
+        ("Central Coast Coffee", "Green-bean reseller (home roasters)"),
+        ("Di Pacci Coffee Company", "Green-bean reseller + equipment"),
+        ("MICE27", "Trade show"), ("Golden Bean Australasia", "Roasting competition"),
+        ("Consulate General of Indonesia", "Government"), ("INDOfest Adelaide", "Community festival"),
+        ("Ordermentum", "Prospecting tool"), ("Foodland", "Supermarket pathway"), ("Pondok Daun", "Restaurants"),
+    ]:
+        ws.append([company, category, "SA"])
+    wb.save(cfg.workbook_path("master"))
+    store = WorkbookStore("master", cfg.workbook_path("master"), cfg).load()
+    notes = []
+    cats = {c.label: c for c in profile_categories(cfg, store, notes)}
+
+    # Every "Roaster ..." variant (and the sheet's existing "Roasters") is one search, with examples from all.
+    assert not any(label.startswith("Roaster") and label != "Roasters" for label in cats)
+    assert cats["Roasters"].examples == ("Bean There Roasters", "Monastery Coffee", "Dawn Patrol Coffee",
+                                         "Coffee in Common", "Carnevale Coffee Roasters")
+    assert "Green-bean reseller" in cats and "Commercial roaster & distributor" in cats
+    assert "Green importer (Brazil specialist): partner" in cats  # the "not buyer" note isn't a category
+    assert not any(bad in cats for bad in ("wholesale)", "not buyer", "Roaster (specialty"))
+    for event in ("Trade show", "Roasting competition", "Government", "Community festival", "Prospecting tool",
+                  "Supermarket pathway"):
+        assert event not in cats
+    assert "Restaurants" in cats  # still yours to search
+    assert any("not searched" in n and "Trade show" in n for n in notes)

@@ -99,6 +99,9 @@ Open ─(bounce)─────────────────────�
 - **Wider buyer search:** besides the categories in your tabs, Discover also looks for commercial roasters
   with espresso blends, green coffee suppliers for home roasters, contract / private-label roasters and café
   groups with their own roastery (`discovery.profiles.master.categories`), a few categories each week.
+  Variants in your Category column ("Roaster + café", "Roaster (wholesale)") are searched as one category,
+  and entries that aren't businesses to email (trade shows, competitions, government, festivals,
+  prospecting tools) are skipped; `check` lists both.
 - **Talking points:** the new-lead tabs have a `Talking points` column. Anything you write there (how you met,
   what to mention) is built into that contact's email.
 

@@ -113,22 +113,57 @@ def find_tab(store: WorkbookStore, name: str) -> SheetView | None:
     return None
 
 
+# Prospect-list entries that are events, programmes or tools rather than businesses to email.
+_NOT_PROSPECTS = re.compile(
+    r"trade ?show|\bexpo\b|competition|government|consulate|festival|prospecting|directory|pathway|"
+    r"\bnot (?:a )?buyer", re.I)
+
+
 def _split(label: str) -> list[str]:
-    """'Importers, Roasters, Wholesalers & Traders' -> four searchable categories."""
-    if "," not in label:
+    """'Importers, Roasters, Wholesalers & Traders' -> four searchable categories.
+
+    Commas in brackets don't split ("Roaster (specialty, wholesale)" stays one) and note-like parts
+    ("Green importer: partner, not buyer") are dropped.
+    """
+    brackets = re.findall(r"\([^()]*\)", label)
+    masked = re.sub(r"\([^()]*\)", "\0", label)
+    if "," not in masked:
         return [label]
-    return [p.strip() for p in re.split(r",|&|\band\b", label) if p.strip()]
+    restore = iter(brackets)
+    parts = []
+    for part in re.split(r",|&|\band\b", masked):
+        while "\0" in part:
+            part = part.replace("\0", next(restore), 1)
+        part = part.strip()
+        if part and not re.match(r"(?:not|no)\b", part, re.I):
+            parts.append(part)
+    return parts
+
+
+def _family(label: str) -> str:
+    """The kind of business a category names: 'Roaster + café' and 'Roaster (wholesale)' -> 'Roaster'."""
+    return clean(re.split(r"[(+:/]| - ", label, maxsplit=1)[0]).rstrip(" -&,") or label
+
+
+def _family_key(label: str) -> str:
+    key = _family(label).lower()
+    return key[:-1] if key.endswith("s") and not key.endswith("ss") else key
 
 
 def profile_categories(cfg, store: WorkbookStore, notes: list[str]) -> list[Category]:
     profile = cfg.profile(store.name) or {}
     found: dict[str, Category] = {}
+    exclude = {e.strip().lower() for e in profile.get("exclude_categories") or []}
 
     def add(label: str, source: str, examples: list[str] | None = None) -> None:
         label = clean(label)
-        if label and label.lower() not in found:
+        if label and label.lower() not in found and label.lower() not in exclude:
             found[label.lower()] = Category(label, category_kind(label), tuple(examples or [])[:5], source)
 
+    # Variants of one kind of business ("Roaster + café", "Roaster (wholesale)") are searched as one
+    # category, so a long prospect list doesn't turn into dozens of near-identical searches.
+    families: dict[str, list[tuple[str, list[str], str]]] = {}
+    skipped: list[str] = []
     for spec in profile.get("category_tabs") or []:
         spec = {"tab": spec} if isinstance(spec, str) else spec
         view = find_tab(store, spec["tab"])
@@ -142,19 +177,31 @@ def profile_categories(cfg, store: WorkbookStore, notes: list[str]) -> list[Cate
                 if label := row.text("category"):
                     labels.setdefault(label, []).append(row.text("company"))
         match = [w.lower() for w in spec.get("match") or []]
-        before = len(found)
+        added = False
         for label, companies in labels.items():
             if match and not any(w in label.lower() for w in match):
                 continue
             for part in _split(label):
-                add(part, view.title, [c for c in companies if c])
-        if len(found) == before and spec.get("fallback"):
+                if part.lower() in exclude:
+                    continue
+                if _NOT_PROSPECTS.search(part):
+                    skipped.append(part)
+                    continue
+                families.setdefault(_family_key(part), []).append((part, companies, view.title))
+                added = True
+        if not added and spec.get("fallback"):
             for part in _split(spec["fallback"]):
-                add(part, "config fallback")
+                families.setdefault(_family_key(part), []).append((part, [], "config fallback"))
+    for members in families.values():
+        variants = list(dict.fromkeys(label for label, _, _ in members))
+        examples = list(dict.fromkeys(c for _, companies, _ in members for c in companies if c))
+        add(variants[0] if len(variants) == 1 else _family(variants[0]), members[0][2], examples)
+    if skipped:
+        notes.append(f"{store.path.name}: not searched (events, programmes or tools rather than businesses to "
+                     f"email): {'; '.join(dict.fromkeys(skipped))}")
     for label in profile.get("categories") or []:  # yours from the tabs first, then these
         add(label, "config")
-    exclude = {e.strip().lower() for e in profile.get("exclude_categories") or []}
-    return [c for c in found.values() if c.label.lower() not in exclude]
+    return list(found.values())
 
 
 def plan_segments(cfg, stores: dict[str, WorkbookStore], week: int, notes: list[str],
