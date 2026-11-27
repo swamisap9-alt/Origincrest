@@ -92,7 +92,7 @@ def test_file_open_in_word_is_explained(folders, make_ctx, monkeypatch):
     import shutil
 
     src, dst = folders
-    quote = src / "OriginCrest enquiries" / "Quotation - Soho.docx"
+    quote = src / "OriginCrest enquiries" / "Quotation - Customer.docx"
     quote.write_bytes(b"docx")
     real_copy = shutil.copyfile
 
@@ -105,8 +105,8 @@ def test_file_open_in_word_is_explained(folders, make_ctx, monkeypatch):
     ctx = make_ctx("drive-sync")
     run_drive_sync(ctx)
     [error] = ctx.report.sections["Errors"]
-    assert "Quotation - Soho.docx" in error and "open in another program" in error
+    assert "Quotation - Customer.docx" in error and "open in another program" in error
     monkeypatch.setattr(shutil, "copyfile", real_copy)  # closed in Word: copied at the next check
     ctx = make_ctx("drive-sync")
     assert run_drive_sync(ctx) == 1
-    assert (dst / "OriginCrest enquiries" / "Quotation - Soho.docx").read_bytes() == b"docx"
+    assert (dst / "OriginCrest enquiries" / "Quotation - Customer.docx").read_bytes() == b"docx"

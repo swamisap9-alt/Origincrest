@@ -127,6 +127,20 @@ class ClaudeAgent:
                 "(an empty list is fine if nothing qualified).")})
         raise AgentError(f"Claude did not call {record_tool['name']}")
 
+    def structured_content(self, *, system: str, content: list[dict], schema: dict, effort: str) -> dict[str, Any]:
+        """Like structured(), but the user turn is a list of content blocks (text, PDF documents, images)."""
+        response = self._call(
+            system=system,
+            messages=[{"role": "user", "content": content}],
+            effort=effort,
+            output_format={"type": "json_schema", "schema": schema},
+        )
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise AgentError(f"Claude returned invalid JSON: {text[:200]}") from exc
+
     def structured(self, *, system: str, prompt: str, schema: dict, effort: str) -> dict[str, Any]:
         response = self._call(
             system=system,
